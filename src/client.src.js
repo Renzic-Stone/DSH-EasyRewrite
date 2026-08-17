@@ -440,7 +440,7 @@ window.__ModuleLoader__.load({
         "body[data-ds-dark-theme] [data-dsh-bubble-edit] img{filter:invert(1)}" +
         "@media (hover:hover){[data-dsh-bubble-edit][data-time-hover-root] .dbe-time{opacity:0;transition:opacity 80ms}" +
         "[data-dsh-bubble-edit][data-time-hover-root]:hover .dbe-time,[data-dsh-bubble-edit][data-time-hover-root]:focus-within .dbe-time{opacity:1}}" +
-        "[data-dsh-bubble-edit="recall-bar"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}";
+        "[data-dsh-bubble-edit=\"recall-bar\"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}";
       document.head.appendChild(tag);
       return tag;
     }
