@@ -65,14 +65,16 @@ window.__ModuleLoader__.load({
       }, children);
     }
 
-    /** 统计当前消息之后的内容条数（排除 turn-tail 等非内容行）。 */
-    function countContentAfter(nodes, anchorSeq) {
+    /** 统计当前消息之后的内容条数（排除 turn-tail 等非内容行）。seqField: "seq"（legacy nodes）或 "anchorSeq"（chat store）。 */
+    function countContentAfter(nodes, anchorSeq, seqField) {
+      var field = seqField || "seq";
       var n = 0;
       if (!Array.isArray(nodes)) return n;
       for (var i = 0; i < nodes.length; i++) {
         var nd = nodes[i];
         if (nd === null || typeof nd !== "object") continue;
-        if (typeof nd.seq !== "number" || nd.seq <= anchorSeq) continue;
+        var s = nd[field];
+        if (typeof s !== "number" || s <= anchorSeq) continue;
         if (nd.kind === "turn-tail") continue;
         n++;
       }
@@ -172,10 +174,22 @@ window.__ModuleLoader__.load({
       var confirming = confirmState[0];
       var setConfirming = confirmState[1];
 
-      // 统计该消息之后的内容条数（x 条内容）
+      // 统计该消息之后的内容条数（x 条内容）——防御式读取：任何异常都不影响气泡渲染
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
-      var snapshot = typeof props.useSession === "function" ? props.useSession() : null;
-      var afterCount = snapshot && Array.isArray(snapshot.nodes) ? countContentAfter(snapshot.nodes, anchorSeq) : 0;
+      var afterCount = 0;
+      try {
+        var snapshot = typeof props.useSession === "function" ? props.useSession() : null;
+        if (snapshot) {
+          if (Array.isArray(snapshot.nodes)) {
+            afterCount = countContentAfter(snapshot.nodes, anchorSeq, "seq");
+          } else if (snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function") {
+            var chatValues = snapshot.chat.nodes.values();
+            afterCount = countContentAfter(chatValues, anchorSeq, "anchorSeq");
+          }
+        }
+      } catch (err) {
+        console.warn("[dsh-bubble-edit] 会话快照读取失败（数量显示 0）：", err);
+      }
 
       var rowStyle = { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", padding: "2px 0" };
       var bubbleStyle = {
