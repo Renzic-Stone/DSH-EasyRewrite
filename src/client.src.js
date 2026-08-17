@@ -65,6 +65,20 @@ window.__ModuleLoader__.load({
       }, children);
     }
 
+    /** 统计当前消息之后的内容条数（排除 turn-tail 等非内容行）。 */
+    function countContentAfter(nodes, anchorSeq) {
+      var n = 0;
+      if (!Array.isArray(nodes)) return n;
+      for (var i = 0; i < nodes.length; i++) {
+        var nd = nodes[i];
+        if (nd === null || typeof nd !== "object") continue;
+        if (typeof nd.seq !== "number" || nd.seq <= anchorSeq) continue;
+        if (nd.kind === "turn-tail") continue;
+        n++;
+      }
+      return n;
+    }
+
     /**
      * 行内确认胶囊（撤回确认）：长条形灰色胶囊，直接包裹文本 + 白底黑字「确定」「取消」小胶囊按钮。
      * 位置：原用户气泡下方（撤回/复制键位置）；按钮与胶囊边框间距按 dsh 间距规范（gap 8px / padding 6px 10px）。
@@ -158,6 +172,11 @@ window.__ModuleLoader__.load({
       var confirming = confirmState[0];
       var setConfirming = confirmState[1];
 
+      // 统计该消息之后的内容条数（x 条内容）
+      var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
+      var snapshot = typeof props.useSession === "function" ? props.useSession() : null;
+      var afterCount = snapshot && Array.isArray(snapshot.nodes) ? countContentAfter(snapshot.nodes, anchorSeq) : 0;
+
       var rowStyle = { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", padding: "2px 0" };
       var bubbleStyle = {
         maxWidth: "min(80%, var(--dsh-chat-content-width, 748px))",
@@ -180,7 +199,7 @@ window.__ModuleLoader__.load({
         ),
         confirming
           ? React.createElement(ConfirmCapsule, {
-              text: "撤回这条消息及其后内容？",
+              text: "撤回这条消息及其后 " + afterCount + " 条内容？",
               onConfirm: function () { setConfirming(false); console.info("[dsh-bubble-edit] recall confirmed (todo: pending + 回填)"); },
               onCancel: function () { setConfirming(false); }
             })
