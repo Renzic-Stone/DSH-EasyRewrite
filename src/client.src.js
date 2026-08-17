@@ -103,8 +103,9 @@ window.__ModuleLoader__.load({
     /** 复制键：官方 IconCopyOutline16，点击复制消息原文（clipboard，带成功反馈）。
      * 注意：复制键保持原始小尺寸（14px 图标），不随撤回/编辑的 1.3 倍放大。 */
     function CopyButton({ text }) {
-      var copied = React.useState(false)[0];
-      var setCopied = React.useState(false)[1];
+      var copyState = React.useState(false);
+      var copied = copyState[0];
+      var setCopied = copyState[1];
       function copy() {
         var done = function () { setCopied(true); setTimeout(function () { setCopied(false); }, 1500); };
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -153,8 +154,9 @@ window.__ModuleLoader__.load({
       var text = extractText(data.content);
 
       // 撤回确认态：true 时操作区替换为行内确认胶囊（惰性提交——确认只是本地态，真正修改在发送时）
-      var confirming = React.useState(false)[0];
-      var setConfirming = React.useState(false)[1];
+      var confirmState = React.useState(false);
+      var confirming = confirmState[0];
+      var setConfirming = confirmState[1];
 
       var rowStyle = { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", padding: "2px 0" };
       var bubbleStyle = {
