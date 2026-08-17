@@ -19,6 +19,96 @@ window.__ModuleLoader__.load({
       recall: "data:image/png;base64,__DASH_RECALL_ICON__"
     };
 
+    // ---------- 设置读取（localStorage；设置页 UI 在 M3 提供） ----------
+    var SETTING_KEYS = {
+      conflictMode: "dsh-bubble-edit:conflictMode",   // "overwrite" | "merge"
+      visualMode: "dsh-bubble-edit:visualMode"        // "minimal" | "simple" | "info"
+    };
+    function getSetting(key, def) {
+      try { var v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; }
+    }
+    function draftConflictMode() { return getSetting(SETTING_KEYS.conflictMode, "overwrite"); }
+    function recallVisualMode() { return getSetting(SETTING_KEYS.visualMode, "minimal"); }
+
+    // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
+    var PENDING_PREFIX = "dsh-bubble-edit:pending:";
+    var pendingCache = {};
+    var pendingListeners = [];
+    function loadPendingFromStorage(sessionId) {
+      try { var raw = localStorage.getItem(PENDING_PREFIX + sessionId); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+    }
+    function readPending(sessionId) {
+      if (!(sessionId in pendingCache)) pendingCache[sessionId] = loadPendingFromStorage(sessionId);
+      return pendingCache[sessionId];
+    }
+    function writePending(sessionId, p) {
+      pendingCache[sessionId] = p;
+      try {
+        if (p === null) localStorage.removeItem(PENDING_PREFIX + sessionId);
+        else localStorage.setItem(PENDING_PREFIX + sessionId, JSON.stringify(p));
+      } catch (e) { /* ignore */ }
+      var ls = pendingListeners.slice();
+      for (var i = 0; i < ls.length; i++) { try { ls[i](); } catch (e) { /* ignore */ } }
+    }
+    function subscribePending(fn) {
+      pendingListeners.push(fn);
+      return function () { var i = pendingListeners.indexOf(fn); if (i !== -1) pendingListeners.splice(i, 1); };
+    }
+    function usePending(sessionId) {
+      return React.useSyncExternalStore(subscribePending, function () { return readPending(sessionId); });
+    }
+
+    /** 「正在修改」条：输入框上方的 dock 条（灰分割线 + 左上标签 + 右上圆形×）。 */
+    function RecallBanner(props) {
+      var sessionId = props.sessionId;
+      var pending = usePending(sessionId);
+      if (!pending || pending.type !== "recall") return null;
+      function cancel() {
+        var ia = props.inputActions;
+        if (ia && typeof ia.setDraft === "function" && typeof pending.originalDraft === "string") {
+          ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
+        }
+        writePending(sessionId, null);
+        console.info("[dsh-bubble-edit] recall cancelled (恢复原草稿)");
+      }
+      var barStyle = {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        width: "100%",
+        borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))",
+        paddingTop: "6px",
+        marginTop: "2px"
+      };
+      var labelStyle = { fontSize: "12px", color: "var(--dsw-alias-label-secondary)", flex: "1", lineHeight: "18px" };
+      var xStyle = {
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        width: 20,
+        height: 20,
+        borderRadius: "50%",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "var(--dsw-alias-label-secondary)",
+        fontSize: "15px",
+        lineHeight: "15px",
+        padding: 0
+      };
+      return React.createElement(
+        "div", { style: barStyle, "data-dsh-bubble-edit": "recall-banner" },
+        React.createElement("span", { style: labelStyle }, "正在修改"),
+        React.createElement("button", {
+          type: "button",
+          title: "取消撤回",
+          "aria-label": "取消撤回",
+          style: xStyle,
+          onClick: function (e) { e.stopPropagation(); cancel(); }
+        }, "×")
+      );
+    }
+
     function extractText(content) {
       var parts = [];
       if (Array.isArray(content)) {
@@ -193,10 +283,19 @@ window.__ModuleLoader__.load({
       var data = node && node.data ? node.data : {};
       var text = extractText(data.content);
 
+      var sessionId = props.sessionId;
+      var myKey = node && typeof node.key === "string" ? node.key : "";
+      var pending = usePending(sessionId);
+
       // 撤回确认态：true 时操作区替换为行内确认胶囊（惰性提交——确认只是本地态，真正修改在发送时）
       var confirmState = React.useState(false);
       var confirming = confirmState[0];
       var setConfirming = confirmState[1];
+
+      // 渲染期读取输入框草稿（存 ref 供确认时使用）
+      var draftRef = React.useRef("");
+      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : null;
+      if (inputState) draftRef.current = inputState.draft;
 
       // 统计该消息之后的内容条数（x 条内容）——防御式读取：任何异常都不影响气泡渲染
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
@@ -265,6 +364,9 @@ window.__ModuleLoader__.load({
       };
       var actionsStyle = { display: "flex", gap: "2px", alignItems: "center" };
 
+      // 极简视觉模式：本消息处于撤回待定 → 无痕隐藏（数据未变，仅显示层）
+      if (pending && pending.type === "recall" && pending.targetKey === myKey && pending.visualHide) return null;
+
       var timeStyle = {
         color: "var(--dsw-alias-label-tertiary)",
         whiteSpace: "nowrap",
@@ -285,13 +387,42 @@ window.__ModuleLoader__.load({
         confirming
           ? React.createElement(ConfirmCapsule, {
               text: afterCount === 0 ? "是否撤回这条消息？" : (onlyUser ? "撤回这条消息及其后 " + afterCount + " 条提问？" : "撤回这条消息及其后 " + afterCount + " 条内容？"),
-              onConfirm: function () { setConfirming(false); console.info("[dsh-bubble-edit] recall confirmed (todo: pending + 回填)"); },
+              onConfirm: function () {
+                setConfirming(false);
+                // 惰性提交：此刻只记录 pending + 回填输入框，真正修改发生在「发送」时（发送钩子，下一步实现）
+                var conflictMode = draftConflictMode();
+                var visualMode = recallVisualMode();
+                writePending(sessionId, {
+                  type: "recall",
+                  targetKey: myKey,
+                  targetSeq: anchorSeq,
+                  draftText: text,
+                  originalDraft: draftRef.current,
+                  conflictMode: conflictMode,
+                  visualMode: visualMode,
+                  visualHide: visualMode === "minimal",
+                  updatedAt: Date.now()
+                });
+                var ia = props.inputActions;
+                if (ia && typeof ia.setDraft === "function") {
+                  var nextDraft = (conflictMode === "merge" && draftRef.current !== "") ? draftRef.current + "\n" + text : text;
+                  ia.setDraft(nextDraft);
+                }
+                console.info("[dsh-bubble-edit] recall pending set（发送时执行真正撤回）");
+              },
               onCancel: function () { setConfirming(false); }
             })
           : React.createElement(
               "div", { style: actionsStyle },
               React.createElement("span", { className: "dbe-time", style: timeStyle }, formatClock(msgTime)),
-              actionButton("撤回", "撤回", function (e) { e.stopPropagation(); setConfirming(true); },
+              actionButton("撤回", "撤回", function (e) {
+                e.stopPropagation();
+                if (pending && pending.type === "recall") {
+                  console.info("[dsh-bubble-edit] 已有待处理撤回（单待定约束），请先取消或发送");
+                  return;
+                }
+                setConfirming(true);
+              },
                 iconImg(ICONS.recall, "撤回")),
               React.createElement(CopyButton, { text: text })
             )
@@ -326,6 +457,15 @@ window.__ModuleLoader__.load({
           }, UserBubbleView);
         });
         if (typeof d === "function") disposers.push(d);
+        // 「正在修改」条：输入框上方 dock
+        var d3 = ctx.slots.inject("conversation.input.dock", function () {
+          return ctx.slots.register({
+            name: "conversation.input.dock",
+            id: "dsh-bubble-edit-recall-banner",
+            order: -10
+          }, RecallBanner);
+        });
+        if (typeof d3 === "function") disposers.push(d3);
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
