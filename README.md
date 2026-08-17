@@ -1,4 +1,4 @@
-# dsh-easy-rewrite
+# dsh-easyrewrite
 
 DSH Web 用户消息气泡「内联编辑（rewrite）+ 撤回」插件。
 
@@ -17,7 +17,7 @@ DSH Web 用户消息气泡「内联编辑（rewrite）+ 撤回」插件。
 ## 安装（发布后）
 
 ```sh
-dsh plugin --profile web add dsh-easy-rewrite
+dsh plugin --profile web add dsh-easyrewrite
 # 重启 dsh web，页面 Ctrl+Shift+R 硬刷新
 ```
 

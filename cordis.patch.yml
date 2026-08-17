@@ -1,4 +1,4 @@
-# dsh-easy-rewrite bundle patch layer —— 把本插件挂载进 profile 树。
+# dsh-easyrewrite bundle patch layer —— 把本插件挂载进 profile 树。
 - insert:
-    - id: dsh-easy-rewrite
-      name: dsh-easy-rewrite
+    - id: dsh-easyrewrite
+      name: dsh-easyrewrite

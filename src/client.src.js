@@ -1,17 +1,17 @@
 /**
- * dsh-easy-rewrite — browser half（Part 2.1）。
+ * dsh-easyrewrite — browser half（Part 2.1）。
  *
  * 本文件是**源码模板**：图标以占位符 __DASH_EDIT_ICON__ / __DASH_RECALL_ICON__ 标记，
  * 由 build.mjs 读取 assets/*.png 内联为 data URL 后生成 lib/client.js。
  * 改图标：替换 assets/edit.png、assets/recall.png → 执行 npm run build。
  */
 window.__ModuleLoader__.load({
-  id: "dsh-easy-rewrite",
+  id: "dsh-easyrewrite",
   factory: function (require) {
     var React = require("react");
     var Primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 
-    var NS = "dsh-easy-rewrite";
+    var NS = "dsh-easyrewrite";
 
     /** 操作区图标（构建期内联，自包含） */
     var ICONS = {
@@ -21,8 +21,8 @@ window.__ModuleLoader__.load({
 
     // ---------- 设置读取（localStorage；设置页 UI 在 M3 提供） ----------
     var SETTING_KEYS = {
-      conflictMode: "dsh-easy-rewrite:conflictMode",   // "overwrite" | "merge"
-      visualMode: "dsh-easy-rewrite:visualMode"        // "minimal" | "simple" | "info"
+      conflictMode: "dsh-easyrewrite:conflictMode",   // "overwrite" | "merge"
+      visualMode: "dsh-easyrewrite:visualMode"        // "minimal" | "simple" | "info"
     };
     function getSetting(key, def) {
       try { var v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; }
@@ -31,7 +31,7 @@ window.__ModuleLoader__.load({
     function recallVisualMode() { return getSetting(SETTING_KEYS.visualMode, "minimal"); }
 
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
-    var PENDING_PREFIX = "dsh-easy-rewrite:pending:";
+    var PENDING_PREFIX = "dsh-easyrewrite:pending:";
     var pendingCache = {};
     var pendingListeners = [];
     function loadPendingFromStorage(sessionId) {
@@ -77,7 +77,7 @@ window.__ModuleLoader__.load({
         var scrollEl = document.querySelector("[data-input-scroll]");
         if (!scrollEl || !scrollEl.parentNode) return;
         var bar = document.createElement("div");
-        bar.setAttribute("data-dsh-easy-rewrite", "recall-bar");
+        bar.setAttribute("data-dsh-easyrewrite", "recall-bar");
         // 分割线左右留空（margin 与输入文本区对齐）；字与 × 相对分割线端点再内收（padding 10px）
         // 内容靠上（相对分割线留出下间距）；标签灰色药丸底；× 灰色圆形底（hover 高亮见注入样式）
         bar.style.cssText = "display:flex;align-items:center;gap:10px;margin:0 16px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.25));padding:2px 6px 12px;";
@@ -101,7 +101,7 @@ window.__ModuleLoader__.load({
             ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
           }
           writePending(sessionId, null);
-          console.info("[dsh-easy-rewrite] recall cancelled (恢复原草稿)");
+          console.info("[dsh-easyrewrite] recall cancelled (恢复原草稿)");
         });
         bar.appendChild(label);
         bar.appendChild(spacer);
@@ -193,7 +193,7 @@ window.__ModuleLoader__.load({
     }
 
     /** 「撤回提示统计仅包含用户提问语句」开关（默认开）。设置页 UI 在 M3 提供，当前经 localStorage 读取。 */
-    var STAT_ONLY_USER_KEY = "dsh-easy-rewrite:statOnlyUser";
+    var STAT_ONLY_USER_KEY = "dsh-easyrewrite:statOnlyUser";
     function statOnlyUser() {
       try { return localStorage.getItem(STAT_ONLY_USER_KEY) !== "0"; }
       catch (e) { return true; }
@@ -227,7 +227,7 @@ window.__ModuleLoader__.load({
         whiteSpace: "nowrap"
       };
       return React.createElement(
-        "div", { style: capsuleStyle, "data-dsh-easy-rewrite": "confirm-capsule" },
+        "div", { style: capsuleStyle, "data-dsh-easyrewrite": "confirm-capsule" },
         React.createElement("span", null, text),
         React.createElement("button", { type: "button", style: pillBtnStyle, onClick: function (e) { e.stopPropagation(); onConfirm(); } }, "确定"),
         React.createElement("button", { type: "button", style: pillBtnStyle, onClick: function (e) { e.stopPropagation(); onCancel(); } }, "取消")
@@ -333,7 +333,7 @@ window.__ModuleLoader__.load({
           }
         }
       } catch (err) {
-        console.warn("[dsh-easy-rewrite] 会话快照读取失败（数量显示 0）：", err);
+        console.warn("[dsh-easyrewrite] 会话快照读取失败（数量显示 0）：", err);
       }
       // 一次性诊断（数量显示 0 时用于定位数据源）
       if (!window.__dshBubbleEditDebug) {
@@ -348,7 +348,7 @@ window.__ModuleLoader__.load({
           chatValuesLen: snapshot && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function" ? snapshot.chat.nodes.values().length : -1,
           anchorSeq: anchorSeq
         };
-        console.info("[dsh-easy-rewrite] snapshot debug:", JSON.stringify(diag));
+        console.info("[dsh-easyrewrite] snapshot debug:", JSON.stringify(diag));
       }
 
       // 发送时间（hover 显示，对齐官方 data-time-hover-root 机制）
@@ -383,7 +383,7 @@ window.__ModuleLoader__.load({
       };
 
       return React.createElement(
-        "div", { style: rowStyle, "data-dsh-easy-rewrite": "user", "data-time-hover-root": true },
+        "div", { style: rowStyle, "data-dsh-easyrewrite": "user", "data-time-hover-root": true },
         React.createElement(
           "div", { style: bubbleStyle },
           text || "（空消息）"
@@ -412,7 +412,7 @@ window.__ModuleLoader__.load({
                   var nextDraft = (conflictMode === "merge" && draftRef.current !== "") ? draftRef.current + "\n" + text : text;
                   ia.setDraft(nextDraft);
                 }
-                console.info("[dsh-easy-rewrite] recall pending set（发送时执行真正撤回）");
+                console.info("[dsh-easyrewrite] recall pending set（发送时执行真正撤回）");
               },
               onCancel: function () { setConfirming(false); }
             })
@@ -422,7 +422,7 @@ window.__ModuleLoader__.load({
               actionButton("撤回", "撤回", function (e) {
                 e.stopPropagation();
                 if (pending && pending.type === "recall") {
-                  console.info("[dsh-easy-rewrite] 已有待处理撤回（单待定约束），请先取消或发送");
+                  console.info("[dsh-easyrewrite] 已有待处理撤回（单待定约束），请先取消或发送");
                   return;
                 }
                 setConfirming(true);
@@ -435,16 +435,16 @@ window.__ModuleLoader__.load({
 
     /** 主题自适应样式：深色模式（body[data-ds-dark-theme]，rc.6 已确认标记）下图标反白。 */
     function injectThemeStyle() {
-      var id = "dsh-easy-rewrite-theme";
+      var id = "dsh-easyrewrite-theme";
       if (document.querySelector("style[data-plugin=\"" + id + "\"]") !== null) return null;
       var tag = document.createElement("style");
       tag.dataset.plugin = id;
       tag.textContent =
-        "[data-dsh-easy-rewrite] img{transition:filter .15s}" +
-        "body[data-ds-dark-theme] [data-dsh-easy-rewrite] img{filter:invert(1)}" +
-        "@media (hover:hover){[data-dsh-easy-rewrite][data-time-hover-root] .dbe-time{opacity:0;transition:opacity 80ms}" +
-        "[data-dsh-easy-rewrite][data-time-hover-root]:hover .dbe-time,[data-dsh-easy-rewrite][data-time-hover-root]:focus-within .dbe-time{opacity:1}}" +
-        "[data-dsh-easy-rewrite=\"recall-bar\"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}";
+        "[data-dsh-easyrewrite] img{transition:filter .15s}" +
+        "body[data-ds-dark-theme] [data-dsh-easyrewrite] img{filter:invert(1)}" +
+        "@media (hover:hover){[data-dsh-easyrewrite][data-time-hover-root] .dbe-time{opacity:0;transition:opacity 80ms}" +
+        "[data-dsh-easyrewrite][data-time-hover-root]:hover .dbe-time,[data-dsh-easyrewrite][data-time-hover-root]:focus-within .dbe-time{opacity:1}}" +
+        "[data-dsh-easyrewrite=\"recall-bar\"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}";
       document.head.appendChild(tag);
       return tag;
     }
@@ -453,7 +453,7 @@ window.__ModuleLoader__.load({
       ctx.effect(function () {
         var disposers = [];
         var styleTag = injectThemeStyle();
-        console.info("[dsh-easy-rewrite] client half active (part2.1)");
+        console.info("[dsh-easyrewrite] client half active (part2.1)");
         var d = ctx.slots.inject("conversation.chat.node", function () {
           return ctx.slots.register({
             name: "conversation.chat.node",
@@ -466,7 +466,7 @@ window.__ModuleLoader__.load({
         var d3 = ctx.slots.inject("conversation.input.dock", function () {
           return ctx.slots.register({
             name: "conversation.input.dock",
-            id: "dsh-easy-rewrite-recall-banner",
+            id: "dsh-easyrewrite-recall-banner",
             order: -10
           }, RecallBanner);
         });
@@ -474,11 +474,11 @@ window.__ModuleLoader__.load({
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
-          console.info("[dsh-easy-rewrite] client half unloaded");
+          console.info("[dsh-easyrewrite] client half unloaded");
         };
-      }, "dsh-easy-rewrite: UserBubbleView overlay");
+      }, "dsh-easyrewrite: UserBubbleView overlay");
     }
 
-    return { name: "dsh-easy-rewrite", inject: ["slots"], apply: apply };
+    return { name: "dsh-easyrewrite", inject: ["slots"], apply: apply };
   }
 });
