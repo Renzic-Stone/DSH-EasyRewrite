@@ -192,11 +192,25 @@ window.__ModuleLoader__.load({
       try {
         var snapshot = typeof props.useSession === "function" ? props.useSession() : null;
         if (snapshot) {
-          if (Array.isArray(snapshot.nodes)) {
+          // 主路径：chat.order（权威渲染顺序）+ 当前节点 key
+          if (snapshot.chat && Array.isArray(snapshot.chat.order) && snapshot.chat.nodes && typeof snapshot.chat.nodes.get === "function") {
+            var order = snapshot.chat.order;
+            var myKey = node && typeof node.key === "string" ? node.key : "";
+            var myIdx = order.indexOf(myKey);
+            if (myIdx !== -1) {
+              for (var k = myIdx + 1; k < order.length; k++) {
+                var afterNode = snapshot.chat.nodes.get(order[k]);
+                if (afterNode && afterNode.kind !== "turn-tail") afterCount++;
+              }
+            }
+          }
+          // 回退路径 1：legacy 顶层 nodes（seq）
+          if (afterCount === 0 && Array.isArray(snapshot.nodes)) {
             afterCount = countContentAfter(snapshot.nodes, anchorSeq, "seq");
-          } else if (snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function") {
-            var chatValues = snapshot.chat.nodes.values();
-            afterCount = countContentAfter(chatValues, anchorSeq, "anchorSeq");
+          }
+          // 回退路径 2：chat store values（anchorSeq）
+          if (afterCount === 0 && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function") {
+            afterCount = countContentAfter(snapshot.chat.nodes.values(), anchorSeq, "anchorSeq");
           }
         }
       } catch (err) {
@@ -208,9 +222,10 @@ window.__ModuleLoader__.load({
         var diag = {
           hasUseSession: typeof props.useSession,
           hasSnapshot: !!snapshot,
-          nodesIsArray: !!(snapshot && Array.isArray(snapshot.nodes)),
+          orderLen: snapshot && snapshot.chat && Array.isArray(snapshot.chat.order) ? snapshot.chat.order.length : -1,
+          nodeKey: node && typeof node.key === "string" ? node.key : "(none)",
+          myIdx: snapshot && snapshot.chat && Array.isArray(snapshot.chat.order) ? snapshot.chat.order.indexOf(node && typeof node.key === "string" ? node.key : "") : -2,
           nodesLen: snapshot && Array.isArray(snapshot.nodes) ? snapshot.nodes.length : -1,
-          hasChat: !!(snapshot && snapshot.chat),
           chatValuesLen: snapshot && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function" ? snapshot.chat.nodes.values().length : -1,
           anchorSeq: anchorSeq
         };
@@ -232,9 +247,18 @@ window.__ModuleLoader__.load({
         lineHeight: "22px",
         color: "var(--dsw-alias-label-primary, inherit)"
       };
-      var actionsStyle = { display: "flex", gap: "2px" };
+      var actionsStyle = { display: "flex", gap: "2px", alignItems: "center" };
 
-      var timeStyle = { color: "var(--dsw-alias-label-tertiary)", whiteSpace: "nowrap", fontSize: "14px", lineHeight: "24px" };
+      var timeStyle = {
+        color: "var(--dsw-alias-label-tertiary)",
+        whiteSpace: "nowrap",
+        fontSize: "14px",
+        lineHeight: "24px",
+        display: "inline-flex",
+        alignItems: "center",
+        height: 28,
+        paddingRight: "4px"
+      };
 
       return React.createElement(
         "div", { style: rowStyle, "data-dsh-bubble-edit": "user", "data-time-hover-root": true },
