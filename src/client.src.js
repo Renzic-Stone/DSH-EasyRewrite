@@ -65,6 +65,18 @@ window.__ModuleLoader__.load({
       }, children);
     }
 
+    /** 时间格式化（对齐官方 formatMessageClock）：今天 HH:MM；同年 M/D HH:MM；跨年 Y/M/D HH:MM。 */
+    function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+    function formatClock(time) {
+      if (typeof time !== "number" || !isFinite(time)) return "";
+      var d = new Date(time);
+      var n = new Date();
+      var clock = pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+      if (d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()) return clock;
+      if (d.getFullYear() === n.getFullYear()) return (d.getMonth() + 1) + "/" + d.getDate() + " " + clock;
+      return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + clock;
+    }
+
     /** 统计当前消息之后的内容条数（排除 turn-tail 等非内容行）。seqField: "seq"（legacy nodes）或 "anchorSeq"（chat store）。 */
     function countContentAfter(nodes, anchorSeq, seqField) {
       var field = seqField || "seq";
@@ -190,6 +202,23 @@ window.__ModuleLoader__.load({
       } catch (err) {
         console.warn("[dsh-bubble-edit] 会话快照读取失败（数量显示 0）：", err);
       }
+      // 一次性诊断（数量显示 0 时用于定位数据源）
+      if (!window.__dshBubbleEditDebug) {
+        window.__dshBubbleEditDebug = true;
+        var diag = {
+          hasUseSession: typeof props.useSession,
+          hasSnapshot: !!snapshot,
+          nodesIsArray: !!(snapshot && Array.isArray(snapshot.nodes)),
+          nodesLen: snapshot && Array.isArray(snapshot.nodes) ? snapshot.nodes.length : -1,
+          hasChat: !!(snapshot && snapshot.chat),
+          chatValuesLen: snapshot && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function" ? snapshot.chat.nodes.values().length : -1,
+          anchorSeq: anchorSeq
+        };
+        console.info("[dsh-bubble-edit] snapshot debug:", JSON.stringify(diag));
+      }
+
+      // 发送时间（hover 显示，对齐官方 data-time-hover-root 机制）
+      var msgTime = data && typeof data.time === "number" ? data.time : (typeof node.time === "number" ? node.time : 0);
 
       var rowStyle = { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", padding: "2px 0" };
       var bubbleStyle = {
@@ -205,20 +234,23 @@ window.__ModuleLoader__.load({
       };
       var actionsStyle = { display: "flex", gap: "2px" };
 
+      var timeStyle = { color: "var(--dsw-alias-label-tertiary)", whiteSpace: "nowrap", fontSize: "14px", lineHeight: "24px" };
+
       return React.createElement(
-        "div", { style: rowStyle, "data-dsh-bubble-edit": "user" },
+        "div", { style: rowStyle, "data-dsh-bubble-edit": "user", "data-time-hover-root": true },
         React.createElement(
           "div", { style: bubbleStyle },
           text || "（空消息）"
         ),
         confirming
           ? React.createElement(ConfirmCapsule, {
-              text: "撤回这条消息及其后 " + afterCount + " 条内容？",
+              text: afterCount === 0 ? "是否撤回这条消息？" : "撤回这条消息及其后 " + afterCount + " 条内容？",
               onConfirm: function () { setConfirming(false); console.info("[dsh-bubble-edit] recall confirmed (todo: pending + 回填)"); },
               onCancel: function () { setConfirming(false); }
             })
           : React.createElement(
               "div", { style: actionsStyle },
+              React.createElement("span", { className: "dbe-time", style: timeStyle }, formatClock(msgTime)),
               actionButton("撤回", "撤回", function (e) { e.stopPropagation(); setConfirming(true); },
                 iconImg(ICONS.recall, "撤回")),
               React.createElement(CopyButton, { text: text })
@@ -234,7 +266,9 @@ window.__ModuleLoader__.load({
       tag.dataset.plugin = id;
       tag.textContent =
         "[data-dsh-bubble-edit] img{transition:filter .15s}" +
-        "body[data-ds-dark-theme] [data-dsh-bubble-edit] img{filter:invert(1)}";
+        "body[data-ds-dark-theme] [data-dsh-bubble-edit] img{filter:invert(1)}" +
+        "@media (hover:hover){[data-dsh-bubble-edit][data-time-hover-root] .dbe-time{opacity:0;transition:opacity 80ms}" +
+        "[data-dsh-bubble-edit][data-time-hover-root]:hover .dbe-time,[data-dsh-bubble-edit][data-time-hover-root]:focus-within .dbe-time{opacity:1}}";
       document.head.appendChild(tag);
       return tag;
     }
