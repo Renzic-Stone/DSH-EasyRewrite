@@ -77,8 +77,12 @@ window.__ModuleLoader__.load({
       return d.getFullYear() + "/" + (d.getMonth() + 1) + "/" + d.getDate() + " " + clock;
     }
 
-    /** 统计当前消息之后的内容条数（排除 turn-tail 等非内容行）。seqField: "seq"（legacy nodes）或 "anchorSeq"（chat store）。 */
-    function countContentAfter(nodes, anchorSeq, seqField) {
+    /**
+     * 统计当前消息之后的内容条数。
+     * seqField: "seq"（legacy nodes）或 "anchorSeq"（chat store）。
+     * onlyUser: 仅统计用户提问消息（kind === "user"），即「撤回提示统计仅包含用户提问语句」开关。
+     */
+    function countContentAfter(nodes, anchorSeq, seqField, onlyUser) {
       var field = seqField || "seq";
       var n = 0;
       if (!Array.isArray(nodes)) return n;
@@ -88,9 +92,17 @@ window.__ModuleLoader__.load({
         var s = nd[field];
         if (typeof s !== "number" || s <= anchorSeq) continue;
         if (nd.kind === "turn-tail") continue;
+        if (onlyUser && nd.kind !== "user") continue;
         n++;
       }
       return n;
+    }
+
+    /** 「撤回提示统计仅包含用户提问语句」开关（默认开）。设置页 UI 在 M3 提供，当前经 localStorage 读取。 */
+    var STAT_ONLY_USER_KEY = "dsh-bubble-edit:statOnlyUser";
+    function statOnlyUser() {
+      try { return localStorage.getItem(STAT_ONLY_USER_KEY) !== "0"; }
+      catch (e) { return true; }
     }
 
     /**
@@ -189,6 +201,7 @@ window.__ModuleLoader__.load({
       // 统计该消息之后的内容条数（x 条内容）——防御式读取：任何异常都不影响气泡渲染
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
       var afterCount = 0;
+      var onlyUser = statOnlyUser();
       try {
         // 注意：useSession 必须传 selector（官方 bindSnapshotSelector 契约），无参调用会崩
         var snapshot = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
@@ -201,17 +214,19 @@ window.__ModuleLoader__.load({
             if (myIdx !== -1) {
               for (var k = myIdx + 1; k < order.length; k++) {
                 var afterNode = snapshot.chat.nodes.get(order[k]);
-                if (afterNode && afterNode.kind !== "turn-tail") afterCount++;
+                if (!afterNode || afterNode.kind === "turn-tail") continue;
+                if (onlyUser && afterNode.kind !== "user") continue;
+                afterCount++;
               }
             }
           }
           // 回退路径 1：legacy 顶层 nodes（seq）
           if (afterCount === 0 && Array.isArray(snapshot.nodes)) {
-            afterCount = countContentAfter(snapshot.nodes, anchorSeq, "seq");
+            afterCount = countContentAfter(snapshot.nodes, anchorSeq, "seq", onlyUser);
           }
           // 回退路径 2：chat store values（anchorSeq）
           if (afterCount === 0 && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function") {
-            afterCount = countContentAfter(snapshot.chat.nodes.values(), anchorSeq, "anchorSeq");
+            afterCount = countContentAfter(snapshot.chat.nodes.values(), anchorSeq, "anchorSeq", onlyUser);
           }
         }
       } catch (err) {
@@ -269,7 +284,7 @@ window.__ModuleLoader__.load({
         ),
         confirming
           ? React.createElement(ConfirmCapsule, {
-              text: afterCount === 0 ? "是否撤回这条消息？" : "撤回这条消息及其后 " + afterCount + " 条内容？",
+              text: afterCount === 0 ? "是否撤回这条消息？" : (onlyUser ? "撤回这条消息及其后 " + afterCount + " 条提问？" : "撤回这条消息及其后 " + afterCount + " 条内容？"),
               onConfirm: function () { setConfirming(false); console.info("[dsh-bubble-edit] recall confirmed (todo: pending + 回填)"); },
               onCancel: function () { setConfirming(false); }
             })
