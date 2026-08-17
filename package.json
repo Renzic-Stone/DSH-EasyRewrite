@@ -15,7 +15,8 @@
     },
     "client": {
       "inject": [
-        "slots"
+        "slots",
+        "sessions"
       ],
       "platform": "web"
     }
