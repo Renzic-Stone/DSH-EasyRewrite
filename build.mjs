@@ -1,5 +1,5 @@
 /**
- * dsh-bubble-edit 构建脚本：
+ * dsh-easy-rewrite 构建脚本：
  * 读取 assets/*.png → base64 → 替换 src/client.src.js 中的占位符 → 生成 lib/client.js。
  * 用法：npm run build（或 node build.mjs）。发布/安装（git 源）经 prepare 自动执行。
  */
@@ -18,4 +18,4 @@ tpl = tpl.replaceAll("__DASH_EDIT_ICON__", edit).replaceAll("__DASH_RECALL_ICON_
 
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, tpl);
-console.log("[dsh-bubble-edit] built:", out, "(" + tpl.length + " bytes)");
+console.log("[dsh-easy-rewrite] built:", out, "(" + tpl.length + " bytes)");

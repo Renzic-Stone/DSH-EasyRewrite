@@ -1,4 +1,4 @@
-# dsh-bubble-edit bundle patch layer —— 把本插件挂载进 profile 树。
+# dsh-easy-rewrite bundle patch layer —— 把本插件挂载进 profile 树。
 - insert:
-    - id: dsh-bubble-edit
-      name: dsh-bubble-edit
+    - id: dsh-easy-rewrite
+      name: dsh-easy-rewrite

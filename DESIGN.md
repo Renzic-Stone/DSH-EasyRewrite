@@ -1,4 +1,4 @@
-# dsh-bubble-edit · 用户气泡「内联编辑 + 撤回」插件设计文档
+# dsh-easy-rewrite · 用户气泡「内联编辑 + 撤回」插件设计文档
 
 > 状态：设计 v0.4（已整合用户 20 项决策：5 + 5 + 10）｜ 目标宿主：DeepSeek Harness（dsh）Web profile（rc.6）
 > 定位：双面（host + client）bundle 插件，纯官方扩展点实现，不改 DSH 源码。
@@ -46,7 +46,7 @@
 | 位置 | 用户气泡 hover 操作区，复制键旁「撤回」键 |
 | 范围 | **不限制**——任何一条用户消息都能撤回（删多少由确认条里的数量提示把关） |
 | **确认 UI（行内胶囊）** | 点撤回键后，**在原用户气泡下方（撤回/复制键位置）**出现长条形**灰色胶囊**（dsh 设计语言），内直接包裹文本：`撤回这条消息及其后 x 条内容？`（纯文本，不再套框）+ 「确定」「取消」两个**白底黑字小胶囊按钮**；按钮与胶囊边框间距按 dsh 间距规范（如 gap 8px / padding 8px 16px） |
-| 统计口径（设置项） | 「**撤回提示统计仅包含用户提问语句**」默认开：x = 该消息**之后**的用户提问条数（kind=user，不含 assistant/工具/turn-tail）；关闭 = 统计之后全部内容条数。**0 条时文案改为「是否撤回这条消息？」**；仅用户口径时文案为「其后 x 条提问？」。开关经 localStorage 持久化（`dsh-bubble-edit:statOnlyUser`），M3 接入设置页 |
+| 统计口径（设置项） | 「**撤回提示统计仅包含用户提问语句**」默认开：x = 该消息**之后**的用户提问条数（kind=user，不含 assistant/工具/turn-tail）；关闭 = 统计之后全部内容条数。**0 条时文案改为「是否撤回这条消息？」**；仅用户口径时文案为「其后 x 条提问？」。开关经 localStorage 持久化（`dsh-easy-rewrite:statOnlyUser`），M3 接入设置页 |
 | 确认后 | 文本回填输入框；与已有草稿的关系由设置决定（**覆盖 / 合并**，默认覆盖） |
 | 覆盖模式 | 原草稿暂存，**发送/取消后都恢复显示原草稿**（任何情况下不丢信息） |
 | 「正在修改」条 | 回填后输入框**向上扩展一点、文本位置不变**，文本上方一条**灰色分割线**，左上角「正在修改」标签，右上角**圆形带 × 小按钮**（dsh 风格）；× = 取消（恢复原样） |
@@ -137,12 +137,12 @@ User          Client(half)                              Host(half)           输
 
 ### 4.1 插件形态与接线（社区标准双面插件）
 
-- 包名（建议）：`dsh-bubble-edit`。
+- 包名（建议）：`dsh-easy-rewrite`。
 - `package.json`：`dsh.bundle.patch` → `./cordis.patch.yml`；`dsh.client` →
   `{ platform: "web", inject: ["@deepseek-ai/dsh-client-runtime", "@deepseek-ai/dsh-client-ui-slots",
   "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-primitives", "@deepseek-ai/dsh-api-remotes"] }`；
   `exports["./client"]` → `lib/client.js`（`window.__ModuleLoader__.load` 自注册 IIFE）。
-- `cordis.patch.yml`：`- insert: [{ id: dsh-bubble-edit, name: dsh-bubble-edit }]`。
+- `cordis.patch.yml`：`- insert: [{ id: dsh-easy-rewrite, name: dsh-easy-rewrite }]`。
 - 安装：`dsh plugin --profile web add <dir|npm|github:…>`；重启 `dsh web` 生效。
 
 ### 4.2 渲染层：覆盖官方 user 渲染器（已验证可行）
@@ -156,9 +156,9 @@ User          Client(half)                              Host(half)           输
 ### 4.3 待定状态与草稿持久化（client half）
 
 - 结构：`pendingOp = { type: "edit" | "recall", sessionId, targetSeq, draftText, originalDraft, mode, visualHide, updatedAt }`。
-- 存储：`localStorage`（键 `dsh-bubble-edit:pending:<sessionId>`），按会话隔离。
+- 存储：`localStorage`（键 `dsh-easy-rewrite:pending:<sessionId>`），按会话隔离。
 - **超时备份（Q5 决策）**：`updatedAt` 距今超过设置阈值（默认 2 分钟）仍未处理 →
-  自动把 pending 完整序列化**备份到本地文件**（host 端 `~/.dsh/dsh-bubble-edit/backups/<sessionId>.json`，
+  自动把 pending 完整序列化**备份到本地文件**（host 端 `~/.dsh/dsh-easy-rewrite/backups/<sessionId>.json`，
   经 host 路由写入）；**发送或取消（处理完成）后删除备份文件**；未处理的备份在会话恢复时提示可导入。
 - 会话切换恢复：打开会话时若存在该会话 pending → 恢复编辑态 / 「正在修改」态。
 - 发送钩子（M0 验证项）：composer 提交路径检查当前会话 pending recall → 先 `POST /bubble/recall` 再提交。
@@ -211,7 +211,7 @@ User          Client(half)                              Host(half)           输
 | 附件消息 | 编辑保留附件重发；撤回仅回填文本（附件不恢复） |
 | 撤回待定中关闭 dsh | context 不变；重启后 pending 恢复（localStorage / 超时备份文件） |
 | 编辑中关闭 dsh | context 不变；重启后编辑态恢复 |
-| 草稿超时（>2 分钟未处理） | 自动备份到 `~/.dsh/dsh-bubble-edit/backups/`；发送/取消后删除备份 |
+| 草稿超时（>2 分钟未处理） | 自动备份到 `~/.dsh/dsh-easy-rewrite/backups/`；发送/取消后删除备份 |
 | 多行文本 / IME | textarea 原生支持；Ctrl/Cmd+Enter 确定 |
 | 文本选区/链接单击 | 不进入编辑态（防误触） |
 | 同一会话并发待定 | 单待定约束（3.3）；编辑态保留撤回键可直接转撤回 |
@@ -226,7 +226,7 @@ User          Client(half)                              Host(half)           输
 ## 6. 项目结构
 
 ```
-dsh-bubble-edit/
+dsh-easy-rewrite/
 ├── package.json          # dsh.bundle.patch + dsh.client 声明 + exports["./client"]
 ├── cordis.patch.yml      # profile 组合层插入行
 ├── lib/
@@ -239,7 +239,7 @@ dsh-bubble-edit/
 └── README.md
 ```
 
-备份目录：`$DSH_HOME/dsh-bubble-edit/backups/<sessionId>.json`（host 维护，处理完成即删）。
+备份目录：`$DSH_HOME/dsh-easy-rewrite/backups/<sessionId>.json`（host 维护，处理完成即删）。
 
 ---
 
@@ -252,7 +252,7 @@ dsh-bubble-edit/
 - **M2 编辑 MVP**：点击进入编辑态（三档宽度）、取消/确定、编辑重发（truncate，附件保留）、新版本打开。
 - **M3 打磨**：< X > 版本翻页器与视口锚定、超时备份与清理、覆盖/合并模式与原草稿恢复、草稿持久化与恢复、
   防误触、Esc/快捷键、zh/en 文案、主题令牌适配。
-- **M4 发布**：npm publish + `dsh plugin --profile web add dsh-bubble-edit` 一键安装文档。
+- **M4 发布**：npm publish + `dsh plugin --profile web add dsh-easy-rewrite` 一键安装文档。
 
 ### 验收清单（对应需求）
 - [ ] 单击气泡 → 可编辑文本（预填原始 Markdown 原文）；rewrite 关闭后 → hover 编辑键 + 撤回键同时显示

@@ -1,4 +1,4 @@
-# dsh-bubble-edit · 项目规划（流程 / 架构 / 规范 / git 工作流）
+# dsh-easy-rewrite · 项目规划（流程 / 架构 / 规范 / git 工作流）
 
 > 版本：PLAN v1（待用户审核）｜ 配套：DESIGN.md（v0.4，需求与交互设计）｜ 宿主：dsh web rc.6
 
@@ -24,11 +24,11 @@
 
 | 项 | 规范 |
 |---|---|
-| 包名 | `dsh-bubble-edit`（社区惯例无 scope；若发布 npm 需唯一） |
+| 包名 | `dsh-easy-rewrite`（社区惯例无 scope；若发布 npm 需唯一） |
 | `package.json` | `type: module`；`main: lib/index.js`；`exports["."]` → `lib/index.js`；`exports["./client"]` → `lib/client.js`；`exports["./package.json"]` |
 | `dsh.bundle.patch` | `./cordis.patch.yml`（profile 组合层挂载） |
 | `dsh.client` | `{ platform: "web", inject: [需用到的客户端服务] }`——inject 名单即依赖声明，拿不到未声明的 ctx 面 |
-| `cordis.patch.yml` | `- insert: [{ id: dsh-bubble-edit, name: dsh-bubble-edit }]` |
+| `cordis.patch.yml` | `- insert: [{ id: dsh-easy-rewrite, name: dsh-easy-rewrite }]` |
 | `files` | `lib` + `cordis.patch.yml` + README（不发布 src/构建产物外的杂物） |
 | host half | 纯 Node ESM：`export const name / inject / apply(ctx)` |
 | client half | 浏览器 bundle：`window.__ModuleLoader__.load({ id, factory })`，factory 返回 `{ name, inject, apply }` |
@@ -90,7 +90,7 @@
 ### 3.2 目录结构
 
 ```
-plugins/dsh-bubble-edit/            ← git 仓库根（本地仓库，无远程）
+plugins/dsh-easy-rewrite/            ← git 仓库根（本地仓库，无远程）
 ├── package.json                    # dsh.bundle.patch + dsh.client + exports["./client"]
 ├── cordis.patch.yml                # profile 挂载层
 ├── PROJECT_PLAN.md                 # 本文档
@@ -117,7 +117,7 @@ plugins/dsh-bubble-edit/            ← git 仓库根（本地仓库，无远程
 | `routes` | /bubble/recall、/bubble/edit、/bubble/backup、/bubble/backup/delete（同源，校验+错误码） | webServer |
 | `boundaryResolver` | 定位 targetSeq 之前的最后闭合 turn 边界 | sessions / sessionQuery |
 | `forkEngine` | 边界处 fork 新版本（sessions.fork 优先，agents.create({seed,meta}) 备选）→ flush → newId | sessions / agents |
-| `backupService` | pending 超时备份写 `$DSH_HOME/dsh-bubble-edit/backups/<sid>.json`、处理完成后删除 | fs |
+| `backupService` | pending 超时备份写 `$DSH_HOME/dsh-easy-rewrite/backups/<sid>.json`、处理完成后删除 | fs |
 
 **client half（lib/client.js）**
 | 模块 | 职责 |
@@ -178,7 +178,7 @@ settings.section（或 settings.general.item）              ← 设置页
 
 ## 5. git 工作流约定（本地仓库，不使用 GitHub）
 
-- **仓库位置**：`plugins/dsh-bubble-edit/`（独立本地仓库；不关联、不 push 任何远程）。
+- **仓库位置**：`plugins/dsh-easy-rewrite/`（独立本地仓库；不关联、不 push 任何远程）。
 - **分支模型**：
   - `main`：始终可发布/可演示的基线；
   - 每阶段一个 feature 分支：`feat/m0-verify`、`feat/m1-recall`、`feat/m2-edit`、`feat/m3-polish`；
@@ -187,7 +187,7 @@ settings.section（或 settings.general.item）              ← 设置页
   - `feat(recall): 新增行内确认胶囊` / `fix(pager): 切换版本时视口跳位` / `docs(plan): …` / `test(m1): …` / `chore: …`
 - **里程碑 Tag**（annotated）：`m0-verify` → `m1-recall` → `m2-edit` → `m3-polish` → `v0.1.0`。
 - **提交前检查**：`node --check lib/*.js` 语法校验；冒烟测试通过；CHANGELOG 同步。
-- **回滚**：`git revert`（不改写历史）；备份目录（~/.dsh/dsh-bubble-edit/backups）永远不进仓库。
+- **回滚**：`git revert`（不改写历史）；备份目录（~/.dsh/dsh-easy-rewrite/backups）永远不进仓库。
 - **每阶段收尾**：合并 main → 打 tag → 更新 CHANGELOG → 文档与代码同步核对。
 
 ---
