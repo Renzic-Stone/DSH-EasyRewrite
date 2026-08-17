@@ -80,10 +80,10 @@ window.__ModuleLoader__.load({
         bar.setAttribute("data-dsh-bubble-edit", "recall-bar");
         // 分割线左右留空（margin 与输入文本区对齐）；字与 × 相对分割线端点再内收（padding 10px）
         // 内容靠上（相对分割线留出下间距）；标签灰色药丸底；× 灰色圆形底（hover 高亮见注入样式）
-        bar.style.cssText = "display:flex;align-items:center;gap:8px;margin:0 16px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.25));padding:2px 10px 10px;";
+        bar.style.cssText = "display:flex;align-items:center;gap:11px;margin:0 16px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.25));padding:3px 14px 14px;";
         var label = document.createElement("span");
         // 标签药丸只包裹文字（内容宽度）；透明 spacer 撑开剩余空间把 × 推到最右
-        label.style.cssText = "font-size:12px;color:var(--dsw-alias-label-secondary);line-height:18px;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.12));border-radius:999px;padding:1px 10px;";
+        label.style.cssText = "font-size:17px;color:var(--dsw-alias-label-secondary);line-height:25px;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.12));border-radius:999px;padding:2px 14px;";
         var spacer = document.createElement("div");
         spacer.style.cssText = "flex:1;";
         label.textContent = "正在修改";
@@ -92,7 +92,7 @@ window.__ModuleLoader__.load({
         xBtn.title = "取消撤回";
         xBtn.setAttribute("aria-label", "取消撤回");
         xBtn.className = "dbe-recall-x";
-        xBtn.style.cssText = "border:none;cursor:pointer;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-size:15px;line-height:15px;padding:0;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.12));";
+        xBtn.style.cssText = "border:none;cursor:pointer;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-size:21px;line-height:21px;padding:0;background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.12));";
         xBtn.textContent = "×";
         xBtn.addEventListener("click", function (e) {
           e.stopPropagation();
