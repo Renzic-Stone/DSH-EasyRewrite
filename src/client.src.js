@@ -141,8 +141,6 @@ window.__ModuleLoader__.load({
           "div", { style: actionsStyle },
           actionButton("撤回", "撤回", function (e) { e.stopPropagation(); console.info("[dsh-bubble-edit] recall clicked (todo)"); },
             iconImg(ICONS.recall, "撤回")),
-          actionButton("编辑", "编辑", function (e) { e.stopPropagation(); console.info("[dsh-bubble-edit] edit clicked (todo)"); },
-            iconImg(ICONS.edit, "编辑", 22)),
           React.createElement(CopyButton, { text: text })
         )
       );
