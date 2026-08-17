@@ -1,0 +1,36 @@
+{
+  "name": "dsh-bubble-edit",
+  "version": "0.1.0",
+  "description": "DSH Web 用户消息气泡内联编辑（rewrite）与撤回插件：点击气泡原位编辑、行内确认胶囊撤回、惰性提交、< X > 版本翻页器。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "client-plugin",
+    "ui",
+    "edit",
+    "recall",
+    "rewrite"
+  ],
+  "license": "MIT"
+}
