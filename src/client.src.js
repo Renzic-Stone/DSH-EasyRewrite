@@ -63,7 +63,8 @@ window.__ModuleLoader__.load({
       }, children);
     }
 
-    /** 复制键：官方 IconCopyOutline16，点击复制消息原文（clipboard，带成功反馈）。 */
+    /** 复制键：官方 IconCopyOutline16，点击复制消息原文（clipboard，带成功反馈）。
+     * 注意：复制键保持原始小尺寸（14px 图标），不随撤回/编辑的 1.3 倍放大。 */
     function CopyButton({ text }) {
       var copied = React.useState(false)[0];
       var setCopied = React.useState(false)[1];
@@ -73,14 +74,26 @@ window.__ModuleLoader__.load({
           navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text); done(); });
         } else { legacyCopy(text); done(); }
       }
-      return actionButton(
-        copied ? "已复制" : "复制",
-        "复制",
-        function (e) { e.stopPropagation(); copy(); },
-        copied
-          ? React.createElement(Primitives.IconCheckOutline16, { size: 18 })
-          : React.createElement(Primitives.IconCopyOutline16, { size: 18 })
-      );
+      return React.createElement("button", {
+        type: "button",
+        title: copied ? "已复制" : "复制",
+        "aria-label": "复制",
+        style: {
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          padding: "3px",
+          borderRadius: "8px",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center"
+        },
+        onMouseEnter: function (e) { e.currentTarget.style.background = "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.1))"; },
+        onMouseLeave: function (e) { e.currentTarget.style.background = "transparent"; },
+        onClick: function (e) { e.stopPropagation(); copy(); }
+      }, copied
+        ? React.createElement(Primitives.IconCheckOutline16, { size: 14 })
+        : React.createElement(Primitives.IconCopyOutline16, { size: 14 }));
     }
 
     /** clipboard API 不可用时的回退复制。 */
