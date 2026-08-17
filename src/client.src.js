@@ -65,6 +65,41 @@ window.__ModuleLoader__.load({
       }, children);
     }
 
+    /**
+     * 行内确认胶囊（撤回确认）：长条形灰色胶囊，直接包裹文本 + 白底黑字「确定」「取消」小胶囊按钮。
+     * 位置：原用户气泡下方（撤回/复制键位置）；按钮与胶囊边框间距按 dsh 间距规范（gap 8px / padding 6px 10px）。
+     */
+    function ConfirmCapsule({ text, onConfirm, onCancel }) {
+      var capsuleStyle = {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        background: "var(--dsw-alias-bg-l2, rgba(128,128,128,0.14))",
+        borderRadius: "999px",
+        padding: "6px 10px 6px 16px",
+        fontSize: "12px",
+        lineHeight: "20px",
+        color: "var(--dsw-alias-label-secondary)"
+      };
+      var pillBtnStyle = {
+        border: "none",
+        background: "#ffffff",
+        color: "#000000",
+        borderRadius: "999px",
+        padding: "3px 14px",
+        fontSize: "12px",
+        lineHeight: "18px",
+        cursor: "pointer",
+        whiteSpace: "nowrap"
+      };
+      return React.createElement(
+        "div", { style: capsuleStyle, "data-dsh-bubble-edit": "confirm-capsule" },
+        React.createElement("span", null, text),
+        React.createElement("button", { type: "button", style: pillBtnStyle, onClick: function (e) { e.stopPropagation(); onConfirm(); } }, "确定"),
+        React.createElement("button", { type: "button", style: pillBtnStyle, onClick: function (e) { e.stopPropagation(); onCancel(); } }, "取消")
+      );
+    }
+
     /** 复制键：官方 IconCopyOutline16，点击复制消息原文（clipboard，带成功反馈）。
      * 注意：复制键保持原始小尺寸（14px 图标），不随撤回/编辑的 1.3 倍放大。 */
     function CopyButton({ text }) {
@@ -117,6 +152,10 @@ window.__ModuleLoader__.load({
       var data = node && node.data ? node.data : {};
       var text = extractText(data.content);
 
+      // 撤回确认态：true 时操作区替换为行内确认胶囊（惰性提交——确认只是本地态，真正修改在发送时）
+      var confirming = React.useState(false)[0];
+      var setConfirming = React.useState(false)[1];
+
       var rowStyle = { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", padding: "2px 0" };
       var bubbleStyle = {
         maxWidth: "min(80%, var(--dsh-chat-content-width, 748px))",
@@ -137,12 +176,18 @@ window.__ModuleLoader__.load({
           "div", { style: bubbleStyle },
           text || "（空消息）"
         ),
-        React.createElement(
-          "div", { style: actionsStyle },
-          actionButton("撤回", "撤回", function (e) { e.stopPropagation(); console.info("[dsh-bubble-edit] recall clicked (todo)"); },
-            iconImg(ICONS.recall, "撤回")),
-          React.createElement(CopyButton, { text: text })
-        )
+        confirming
+          ? React.createElement(ConfirmCapsule, {
+              text: "撤回这条消息及其后内容？",
+              onConfirm: function () { setConfirming(false); console.info("[dsh-bubble-edit] recall confirmed (todo: pending + 回填)"); },
+              onCancel: function () { setConfirming(false); }
+            })
+          : React.createElement(
+              "div", { style: actionsStyle },
+              actionButton("撤回", "撤回", function (e) { e.stopPropagation(); setConfirming(true); },
+                iconImg(ICONS.recall, "撤回")),
+              React.createElement(CopyButton, { text: text })
+            )
       );
     }
 
