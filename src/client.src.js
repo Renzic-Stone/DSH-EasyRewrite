@@ -58,55 +58,49 @@ window.__ModuleLoader__.load({
       return React.useSyncExternalStore(subscribePending, function () { return readPending(sessionId); });
     }
 
-    /** 「正在修改」条：输入框上方的 dock 条（灰分割线 + 左上标签 + 右上圆形×）。 */
+    /**
+     * 「正在修改」条：**注入到输入框内部、文本输入位置上方**（textarea 正前方）。
+     * 组成：灰色分割线（上边线）+ 左上「正在修改」标签 + 右上圆形 ×。
+     * 输入框随条自然向上扩展一点，文本位置不变；× = 取消撤回（恢复原草稿）。
+     * 纯 DOM 注入（[data-input-scroll] 为官方输入区稳定标记），卸载时移除。
+     */
     function RecallBanner(props) {
       var sessionId = props.sessionId;
       var pending = usePending(sessionId);
-      if (!pending || pending.type !== "recall") return null;
-      function cancel() {
-        var ia = props.inputActions;
-        if (ia && typeof ia.setDraft === "function" && typeof pending.originalDraft === "string") {
-          ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
-        }
-        writePending(sessionId, null);
-        console.info("[dsh-bubble-edit] recall cancelled (恢复原草稿)");
-      }
-      var barStyle = {
-        display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        width: "100%",
-        borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))",
-        paddingTop: "6px",
-        marginTop: "2px"
-      };
-      var labelStyle = { fontSize: "12px", color: "var(--dsw-alias-label-secondary)", flex: "1", lineHeight: "18px" };
-      var xStyle = {
-        border: "none",
-        background: "transparent",
-        cursor: "pointer",
-        width: 20,
-        height: 20,
-        borderRadius: "50%",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--dsw-alias-label-secondary)",
-        fontSize: "15px",
-        lineHeight: "15px",
-        padding: 0
-      };
-      return React.createElement(
-        "div", { style: barStyle, "data-dsh-bubble-edit": "recall-banner" },
-        React.createElement("span", { style: labelStyle }, "正在修改"),
-        React.createElement("button", {
-          type: "button",
-          title: "取消撤回",
-          "aria-label": "取消撤回",
-          style: xStyle,
-          onClick: function (e) { e.stopPropagation(); cancel(); }
-        }, "×")
-      );
+      var active = pending && pending.type === "recall";
+
+      React.useEffect(function () {
+        if (!active) return;
+        var ta = document.querySelector("[data-input-scroll] textarea");
+        if (!ta || !ta.parentNode) return;
+        var bar = document.createElement("div");
+        bar.setAttribute("data-dsh-bubble-edit", "recall-bar");
+        bar.style.cssText = "display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,0.25));padding:2px 2px 6px;margin-bottom:2px;";
+        var label = document.createElement("span");
+        label.style.cssText = "font-size:12px;color:var(--dsw-alias-label-secondary);flex:1;line-height:18px;";
+        label.textContent = "正在修改";
+        var xBtn = document.createElement("button");
+        xBtn.type = "button";
+        xBtn.title = "取消撤回";
+        xBtn.setAttribute("aria-label", "取消撤回");
+        xBtn.style.cssText = "border:none;background:transparent;cursor:pointer;width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-size:15px;line-height:15px;padding:0;";
+        xBtn.textContent = "×";
+        xBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var ia = props.inputActions;
+          if (ia && typeof ia.setDraft === "function" && typeof pending.originalDraft === "string") {
+            ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
+          }
+          writePending(sessionId, null);
+          console.info("[dsh-bubble-edit] recall cancelled (恢复原草稿)");
+        });
+        bar.appendChild(label);
+        bar.appendChild(xBtn);
+        ta.parentNode.insertBefore(bar, ta);
+        return function () { if (bar.parentNode) bar.parentNode.removeChild(bar); };
+      }, [active, sessionId, pending]);
+
+      return null; // 纯 DOM 注入，槽位不渲染内容
     }
 
     function extractText(content) {
