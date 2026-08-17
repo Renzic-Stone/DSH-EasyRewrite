@@ -34,5 +34,9 @@
     "recall",
     "rewrite"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "prepare": "node build.mjs"
+  }
 }
