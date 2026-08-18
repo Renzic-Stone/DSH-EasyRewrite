@@ -130,7 +130,7 @@ window.__ModuleLoader__.load({
           body: JSON.stringify({ sessionId: sid, targetSeq: p.targetSeq })
         }).then(function (resp) { return resp.json(); }).then(function (data) {
           if (!data || !data.ok) {
-            console.warn("[dsh-easyrewrite] 撤回失败（发送中止）：", data && data.error);
+            console.warn("[dsh-easyrewrite] 撤回失败（发送中止）：", data && data.error, (data && data.message) || "");
             return;
           }
           writePending(sid, null);
