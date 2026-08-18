@@ -958,18 +958,30 @@ window.__ModuleLoader__.load({
         // 历史版本都是归档会话（无痕替换副作用），先恢复再打开；恢复失败也照常打开（幂等）
         var doOpen = function () {
           if (typeof props.openSession === "function") props.openSession(next);
-          // open 生效后（延时确认当前会话），归档家族其他所有版本——列表只保留目标版本一个
-          if (cleanupRef.current !== null) { clearTimeout(cleanupRef.current); cleanupRef.current = null; }
-          cleanupRef.current = setTimeout(function () {
-            cleanupRef.current = null;
+          // 等当前会话确认为 next（轮询 current，不猜时间）后，归档家族其余版本——列表只保留目标一个。
+          // open 未确认（超时 8s）则放弃归档，绝不误伤任何会话。
+          if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
+          var attempts = 0;
+          cleanupRef.current = setInterval(function () {
+            attempts++;
             try {
-              if (typeof props.archiveSession !== "function") return;
               var cur = typeof props.currentSessionId === "function" ? props.currentSessionId() : null;
-              family.versions.forEach(function (vid) {
-                if (vid !== next && vid !== cur) props.archiveSession(vid);
-              });
+              if (cur === next) {
+                clearInterval(cleanupRef.current);
+                cleanupRef.current = null;
+                if (typeof props.archiveSession === "function") {
+                  family.versions.forEach(function (vid) {
+                    if (vid !== next) props.archiveSession(vid);
+                  });
+                }
+                return;
+              }
             } catch (e) { /* ignore */ }
-          }, 400);
+            if (attempts >= 40) {
+              clearInterval(cleanupRef.current);
+              cleanupRef.current = null;
+            }
+          }, 200);
           restoreScrollAnchor(anchor);
         };
         if (typeof props.restoreSession === "function") {
