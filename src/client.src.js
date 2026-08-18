@@ -1567,7 +1567,20 @@ window.__ModuleLoader__.load({
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
                 archiveSession: function (id) {
-                  try { return ctx.workspaces.archiveSession(id); } catch (e) { return Promise.resolve(); }
+                  try {
+                    var ap = ctx.workspaces.archiveSession(id);
+                    if (ap && typeof ap.then === "function") {
+                      ap.then(function (r) {
+                        log("debug", "pager", "归档结果", { id: id, ok: !!(r && r.ok) });
+                      }, function (err) {
+                        log("warn", "pager", "归档失败", { id: id, err: String(err && err.message ? err.message : err) });
+                      });
+                    }
+                    return ap;
+                  } catch (e) {
+                    log("warn", "pager", "归档异常", { id: id, err: String(e && e.message ? e.message : e) });
+                    return Promise.resolve();
+                  }
                 },
                 currentSessionId: function () {
                   try { var s = ctx.sessions.list.getSnapshot(); return s ? s.current : null; } catch (e) { return null; }
