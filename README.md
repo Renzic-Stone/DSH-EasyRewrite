@@ -124,7 +124,7 @@ dsh-easyrewrite/
 ├── src/client.src.js     # client 模板（图标构建期内联）
 ├── assets/               # 撤回/编辑图标（PNG，深色模式 CSS invert 自适应）
 ├── build.mjs             # assets → data-URL → lib/client.js
-├── DESIGN.md             # 完整交互设计（v0.4，20 项产品决策）
+├── DESIGN.md             # 完整交互设计（v1.0，20 项产品决策）
 ├── PROJECT_PLAN.md       # 路线图、架构、git 工作流
 └── docs/                 # api-facts、m0-verify
 ```

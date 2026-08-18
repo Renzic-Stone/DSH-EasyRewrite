@@ -124,7 +124,7 @@ dsh-easyrewrite/
 ├── src/client.src.js     # client テンプレート（アイコンはビルド時にインライン化）
 ├── assets/               # 撤回/編集アイコン（PNG、ダークモードは CSS invert で自動対応）
 ├── build.mjs             # assets → data-URL → lib/client.js
-├── DESIGN.md             # 完全なインタラクションデザイン（v0.4、20 の製品決定）
+├── DESIGN.md             # 完全なインタラクションデザイン（v1.0、20 の製品決定）
 ├── PROJECT_PLAN.md       # ロードマップ、アーキテクチャ、git ワークフロー
 └── docs/                 # api-facts、m0-verify
 ```

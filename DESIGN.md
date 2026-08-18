@@ -1,6 +1,6 @@
 # dsh-easyrewrite · 用户气泡「内联编辑 + 撤回」插件设计文档
 
-> 状态：设计 v0.4（已整合用户 20 项决策：5 + 5 + 10）｜ 目标宿主：DeepSeek Harness（dsh）Web profile（rc.6）
+> 状态：**实现 v1.0**（设计 v0.4，已整合用户 20 项决策：5 + 5 + 10）｜ 目标宿主：DeepSeek Harness（dsh）Web profile（rc.7+）
 > 定位：双面（host + client）bundle 插件，纯官方扩展点实现，不改 DSH 源码。
 
 ---

@@ -2,7 +2,9 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.0.0] — 首个稳定版
+
+1.0 标志着 M1（撤回）/ M2（内联编辑）/ M3（设置页、版本翻页器、快捷键）全部完成并通过用户验收；v0.4.0 之后的内容见下方 Unreleased 历史条目，均已随 1.0.0 发布。
 
 ### Added
 - 项目骨架：git 仓库、README、CHANGELOG、.gitignore

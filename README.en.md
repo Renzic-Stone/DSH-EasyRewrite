@@ -124,7 +124,7 @@ dsh-easyrewrite/
 ├── src/client.src.js     # client template (icons inlined at build)
 ├── assets/               # recall / edit icons (PNG, theme-adaptive via CSS invert)
 ├── build.mjs             # assets → data-URL → lib/client.js
-├── DESIGN.md             # full interaction design (v0.4, 20 product decisions)
+├── DESIGN.md             # full interaction design (v1.0, 20 product decisions)
 ├── PROJECT_PLAN.md       # roadmap, architecture, git workflow
 └── docs/                 # api-facts, m0-verify
 ```

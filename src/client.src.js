@@ -1271,26 +1271,6 @@ window.__ModuleLoader__.load({
         }
         doOpen();
       }
-      // DOM 探测：确认组件实际渲染状态（占位/文字/样式）
-      React.useEffect(function () {
-        try {
-          var el = document.querySelector('[data-dsh-easyrewrite="version-pager"]');
-          if (!el) { log("debug", "pager", "VersionPager dom", { found: false }); return; }
-          var cs = window.getComputedStyle(el);
-          log("debug", "pager", "VersionPager dom", {
-            found: true,
-            w: el.offsetWidth,
-            h: el.offsetHeight,
-            text: el.textContent,
-            childCount: el.children.length,
-            display: cs.display,
-            visibility: cs.visibility,
-            opacity: cs.opacity,
-            color: cs.color,
-            fontSize: cs.fontSize
-          });
-        } catch (e) { log("debug", "pager", "VersionPager dom", { err: String(e && e.message ? e.message : e) }); }
-      }, []);
       // 键盘 ←/→（输入框/可编辑区未聚焦时）
       React.useEffect(function () {
         function onKey(e) {
