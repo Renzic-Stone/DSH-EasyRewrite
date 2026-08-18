@@ -525,7 +525,7 @@ window.__ModuleLoader__.load({
         subtitle: "Bubble edit & recall",
         rewrite: "Bubble edit (click bubble to edit in place)",
         editOffShowRecall: "Show recall key when bubble edit is off",
-        lockedHint: "Turn off "Bubble edit" first to change this",
+        lockedHint: "Turn off \"Bubble edit\" first to change this",
         recallConfirm: "Recall confirmation capsule",
         visualMode: "Recall visual mode",
         visualMinimal: "Minimal (hide all)",
