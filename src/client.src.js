@@ -719,6 +719,10 @@ window.__ModuleLoader__.load({
         pagerTitle: "版本切换（撤回/编辑重发）",
         pagerPrev: "上一个版本",
         pagerNext: "下一个版本",
+        sectionEdit: "编辑",
+        sectionRecall: "撤回",
+        sectionComposer: "回填",
+        sectionVersions: "版本",
         versionFamilies: "版本家族（撤回/编辑重发）",
         versionFamilyNone: "暂无版本家族",
         versionRestoreOpen: "恢复并打开",
@@ -761,6 +765,10 @@ window.__ModuleLoader__.load({
         pagerTitle: "Version pager (recall/edit resends)",
         pagerPrev: "Previous version",
         pagerNext: "Next version",
+        sectionEdit: "Editing",
+        sectionRecall: "Recall",
+        sectionComposer: "Composer fill",
+        sectionVersions: "Versions",
         versionFamilies: "Version families (recall/edit resends)",
         versionFamilyNone: "None yet",
         versionRestoreOpen: "Restore & open",
@@ -803,6 +811,10 @@ window.__ModuleLoader__.load({
         pagerTitle: "バージョン切替（撤回/編集再送）",
         pagerPrev: "前のバージョン",
         pagerNext: "次のバージョン",
+        sectionEdit: "編集",
+        sectionRecall: "撤回",
+        sectionComposer: "入力欄",
+        sectionVersions: "バージョン",
         versionFamilies: "バージョンファミリー（撤回/編集再送）",
         versionFamilyNone: "まだありません",
         versionRestoreOpen: "復元して開く",
@@ -917,7 +929,16 @@ window.__ModuleLoader__.load({
         paddingBottom: "8px",
         display: "flex",
         flexDirection: "column",
-        gap: "12px"
+        gap: "16px"
+      };
+      // 大项分组：组内 10px，组间 16px（bodyStyle gap），标题灰色小字
+      var sectionStyle = { display: "flex", flexDirection: "column", gap: "10px" };
+      var groupTitleStyle = {
+        fontSize: "12px",
+        fontWeight: 600,
+        color: "var(--dsw-alias-label-tertiary)",
+        letterSpacing: "0.02em",
+        lineHeight: "1.6"
       };
       var rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" };
       var labelStyle = { fontSize: "13px", color: "var(--dsw-alias-label-primary)" };
@@ -1022,119 +1043,134 @@ window.__ModuleLoader__.load({
           React.createElement("span", { style: Object.assign({}, chevronStyle, open ? chevronOpenStyle : null) }, "▾")
         ),
         open ? React.createElement("div", { style: bodyStyle },
-          // 气泡框编辑开关 + 二级锁定
-          switchRow(L.rewrite, rewrite, function (v) { setRewrite(v); setBool("dsh-easyrewrite:rewriteOnClick", v); }),
-          switchRow(L.editOffShowRecall, showRecall, function (v) {
-            if (rewrite) return; // 锁定：rewrite 开时不可改
-            setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
-          }, rewrite ? L.lockedHint : null),
-          switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
-        // 撤回快捷键：总开关（Beta，默认关——避免与其他插件快捷键打架）
-        switchRow(L.hotkeyEnable, hotkeyOn, function (v) {
-          setHotkeyOn(v);
-          setHotkeyEnabledSetting(v);
-          if (!v) setRecording(false);
-        }, L.hotkeyHint),
-        // 开关开启时：键位显示 + 录制
-        hotkeyOn ? React.createElement("div", { style: rowStyle },
-          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } },
-            React.createElement("span", { style: labelStyle }, L.hotkey + "：" + (hotkey ? formatHotkey(hotkey) : L.hotkeyNone)),
-            React.createElement("span", { style: hintStyle }, recording ? L.hotkeyRecording : (hotkey ? null : L.hotkeyHint)),
-            hotkeyInvalid ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-error, #d9534f)" } }, L.hotkeyInvalid) : null
-          ),
-          React.createElement("button", {
-            type: "button",
-            style: {
-              appearance: "none",
-              border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
-              background: "transparent",
-              color: "var(--dsw-alias-label-secondary)",
-              borderRadius: "6px",
-              padding: "3px 10px",
-              fontSize: "12px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              flex: "none"
-            },
-            onClick: function () { setHotkeyInvalid(false); setRecording(!recording); }
-          }, recording ? L.hotkeyRecording : L.hotkeyRecord)
-        ) : null,
-          // 视觉模式
-          React.createElement("div", { style: groupStyle },
-            React.createElement("span", { style: labelStyle }, L.visualMode),
-            segmentedGroup([["simple", L.visualSimple], ["minimal", L.visualMinimal], ["info", L.visualInfo]], visual, function (v) { setVisual(v); setSetting("dsh-easyrewrite:visualMode", v); })
-          ),
-          switchRow(L.statOnlyUser, statOnly, function (v) { setStatOnly(v); setBool("dsh-easyrewrite:statOnlyUser", v); }),
-          // 回填冲突模式
-          React.createElement("div", { style: groupStyle },
-            React.createElement("span", { style: labelStyle }, L.conflictMode),
-            segmentedGroup([["overwrite", L.conflictOverwriteShort], ["merge", L.conflictMergeShort]], conflict, function (v) { setConflict(v); setSetting("dsh-easyrewrite:conflictMode", v); }),
-          React.createElement("span", { style: hintStyle }, conflict === "merge" ? L.conflictMerge : L.conflictOverwrite)
-          ),
-          // 编辑宽度：三固定 + 自定义（固定时输入框禁用置灰）
-          React.createElement("div", { style: groupStyle },
-            React.createElement("span", { style: labelStyle }, L.editWidth),
-            segmentedGroup([["compact", L.wCompact], ["standard", L.wStandard], ["extended", L.wExtended], ["custom", L.wCustom]], widthMode, function (v) { setWidthMode(v); setSetting("dsh-easyrewrite:editWidth", v); }),
-            React.createElement("div", { style: rowStyle },
-              React.createElement("span", { style: labelStyle }, L.customWidth),
-              React.createElement("input", {
-                type: "number",
-                min: 100,
-                max: 1200,
-                style: widthMode === "custom" ? inputStyle : disabledInputStyle,
-                disabled: widthMode !== "custom",
-                placeholder: L.placeholderCustom,
-                value: customW,
-                onChange: function (e) {
-                  setCustomW(e.target.value);
-                  setSetting("dsh-easyrewrite:editWidthCustom", e.target.value);
-                }
-              })
+          // —— 编辑 ——
+          React.createElement("div", { style: sectionStyle },
+            React.createElement("span", { style: groupTitleStyle }, L.sectionEdit),
+            switchRow(L.rewrite, rewrite, function (v) { setRewrite(v); setBool("dsh-easyrewrite:rewriteOnClick", v); }),
+            switchRow(L.editOffShowRecall, showRecall, function (v) {
+              if (rewrite) return; // 锁定：rewrite 开时不可改
+              setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
+            }, rewrite ? L.lockedHint : null),
+            // 编辑宽度：三固定 + 自定义（固定时输入框禁用置灰）
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.editWidth),
+              segmentedGroup([["compact", L.wCompact], ["standard", L.wStandard], ["extended", L.wExtended], ["custom", L.wCustom]], widthMode, function (v) { setWidthMode(v); setSetting("dsh-easyrewrite:editWidth", v); }),
+              React.createElement("div", { style: rowStyle },
+                React.createElement("span", { style: labelStyle }, L.customWidth),
+                React.createElement("input", {
+                  type: "number",
+                  min: 100,
+                  max: 1200,
+                  style: widthMode === "custom" ? inputStyle : disabledInputStyle,
+                  disabled: widthMode !== "custom",
+                  placeholder: L.placeholderCustom,
+                  value: customW,
+                  onChange: function (e) {
+                    setCustomW(e.target.value);
+                    setSetting("dsh-easyrewrite:editWidthCustom", e.target.value);
+                  }
+                })
+              )
             )
           ),
-          // 版本家族管理：全归档后也能从这里恢复并打开（官方无归档恢复入口）
-          React.createElement("div", { style: groupStyle },
-            React.createElement("span", { style: labelStyle }, L.versionFamilies),
-            (function () {
-              var families = listVersionFamilies();
-              if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
-              return families.map(function (fam) {
-                return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "4px", padding: "6px 0", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.18))" } },
-                  React.createElement("span", { style: hintStyle }, fam.versions.length + " " + L.versionCount),
-                  fam.versions.map(function (vid, vi) {
-                    return React.createElement("div", { key: vid, style: rowStyle },
-                      React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none" } }, "v" + (vi + 1)),
-                      React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, vid),
-                      React.createElement("button", {
-                        type: "button",
-                        style: {
-                          appearance: "none",
-                          border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
-                          background: "transparent",
-                          color: "var(--dsw-alias-label-secondary)",
-                          borderRadius: "6px",
-                          padding: "2px 8px",
-                          fontSize: "12px",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          flex: "none"
-                        },
-                        onClick: function () {
-                          fetch("/bubble/unarchive", {
-                            method: "POST",
-                            headers: { "content-type": "application/json" },
-                            body: JSON.stringify({ sessionId: vid }),
-                            keepalive: true
-                          }).then(function () {
-                            if (typeof props.openSession === "function") props.openSession(vid);
-                          }).catch(function () { /* ignore */ });
-                        }
-                      }, L.versionRestoreOpen)
-                    );
-                  })
-                );
-              });
-            })()
+          // —— 撤回 ——
+          React.createElement("div", { style: sectionStyle },
+            React.createElement("span", { style: groupTitleStyle }, L.sectionRecall),
+            switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
+            // 撤回快捷键：总开关（Beta，默认关——避免与其他插件快捷键打架）
+            switchRow(L.hotkeyEnable, hotkeyOn, function (v) {
+              setHotkeyOn(v);
+              setHotkeyEnabledSetting(v);
+              if (!v) setRecording(false);
+            }, L.hotkeyHint),
+            // 开关开启时：键位显示 + 录制
+            hotkeyOn ? React.createElement("div", { style: rowStyle },
+              React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } },
+                React.createElement("span", { style: labelStyle }, L.hotkey + "：" + (hotkey ? formatHotkey(hotkey) : L.hotkeyNone)),
+                React.createElement("span", { style: hintStyle }, recording ? L.hotkeyRecording : (hotkey ? null : L.hotkeyHint)),
+                hotkeyInvalid ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-error, #d9534f)" } }, L.hotkeyInvalid) : null
+              ),
+              React.createElement("button", {
+                type: "button",
+                style: {
+                  appearance: "none",
+                  border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+                  background: "transparent",
+                  color: "var(--dsw-alias-label-secondary)",
+                  borderRadius: "6px",
+                  padding: "3px 10px",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  flex: "none"
+                },
+                onClick: function () { setHotkeyInvalid(false); setRecording(!recording); }
+              }, recording ? L.hotkeyRecording : L.hotkeyRecord)
+            ) : null,
+            // 视觉模式
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.visualMode),
+              segmentedGroup([["simple", L.visualSimple], ["minimal", L.visualMinimal], ["info", L.visualInfo]], visual, function (v) { setVisual(v); setSetting("dsh-easyrewrite:visualMode", v); })
+            ),
+            switchRow(L.statOnlyUser, statOnly, function (v) { setStatOnly(v); setBool("dsh-easyrewrite:statOnlyUser", v); })
+          ),
+          // —— 回填 ——
+          React.createElement("div", { style: sectionStyle },
+            React.createElement("span", { style: groupTitleStyle }, L.sectionComposer),
+            // 回填冲突模式
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.conflictMode),
+              segmentedGroup([["overwrite", L.conflictOverwriteShort], ["merge", L.conflictMergeShort]], conflict, function (v) { setConflict(v); setSetting("dsh-easyrewrite:conflictMode", v); }),
+              React.createElement("span", { style: hintStyle }, conflict === "merge" ? L.conflictMerge : L.conflictOverwrite)
+            )
+          ),
+          // —— 版本 ——
+          React.createElement("div", { style: sectionStyle },
+            React.createElement("span", { style: groupTitleStyle }, L.sectionVersions),
+            // 版本家族管理：全归档后也能从这里恢复并打开（官方无归档恢复入口）
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.versionFamilies),
+              (function () {
+                var families = listVersionFamilies();
+                if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
+                return families.map(function (fam) {
+                  return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "4px", padding: "6px 0", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.18))" } },
+                    React.createElement("span", { style: hintStyle }, fam.versions.length + " " + L.versionCount),
+                    fam.versions.map(function (vid, vi) {
+                      return React.createElement("div", { key: vid, style: rowStyle },
+                        React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none" } }, "v" + (vi + 1)),
+                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, vid),
+                        React.createElement("button", {
+                          type: "button",
+                          style: {
+                            appearance: "none",
+                            border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+                            background: "transparent",
+                            color: "var(--dsw-alias-label-secondary)",
+                            borderRadius: "6px",
+                            padding: "2px 8px",
+                            fontSize: "12px",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            flex: "none"
+                          },
+                          onClick: function () {
+                            fetch("/bubble/unarchive", {
+                              method: "POST",
+                              headers: { "content-type": "application/json" },
+                              body: JSON.stringify({ sessionId: vid }),
+                              keepalive: true
+                            }).then(function () {
+                              if (typeof props.openSession === "function") props.openSession(vid);
+                            }).catch(function () { /* ignore */ });
+                          }
+                        }, L.versionRestoreOpen)
+                      );
+                    })
+                  );
+                });
+              })()
+            )
           ),
           React.createElement("span", { style: hintStyle }, L.instant)
         ) : null
