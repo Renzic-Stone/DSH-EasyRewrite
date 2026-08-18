@@ -1,6 +1,6 @@
 {
   "name": "dsh-easyrewrite",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH Web 用户消息气泡内联编辑（rewrite）与撤回插件：点击气泡原位编辑、行内确认胶囊撤回、惰性提交、< X > 版本翻页器。",
   "type": "module",
   "main": "lib/index.js",
