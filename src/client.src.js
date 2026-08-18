@@ -705,6 +705,36 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 通用配置入口行（设置 → 通用配置）：点击展开设置表单。 */
+    function EasyRewriteSettingsRow() {
+      var openState = React.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
+      var L = SETTINGS_I18N[uiLang()] || SETTINGS_I18N.en;
+      var headStyle = {
+        display: "flex",
+        alignItems: "center",
+        gap: "10px",
+        width: "100%",
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        padding: "8px 4px",
+        textAlign: "left"
+      };
+      var titleStyle = { fontSize: "14px", color: "var(--dsw-alias-label-primary)", flex: "none" };
+      var subStyle = { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+      var chevronStyle = { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)" };
+      return React.createElement("div", { "data-dsh-easyrewrite": "settings-row" },
+        React.createElement("button", { type: "button", style: headStyle, onClick: function () { setOpen(!open); } },
+          React.createElement("span", { style: titleStyle }, L.title),
+          React.createElement("span", { style: subStyle }, L.subtitle),
+          React.createElement("span", { style: chevronStyle }, open ? "▾" : "▸")
+        ),
+        open ? React.createElement("div", { style: { padding: "4px 0 12px" } }, React.createElement(EasyRewriteSettingsCard, null)) : null
+      );
+    }
+
     /** 复制键：官方 IconCopyOutline16，点击复制消息原文（clipboard，带成功反馈）。
      * 注意：复制键保持原始小尺寸（14px 图标），不随撤回/编辑的 1.3 倍放大。 */
     function CopyButton({ text }) {
@@ -1196,6 +1226,15 @@ window.__ModuleLoader__.load({
           }, EasyRewriteSettingsCard);
         });
         if (typeof d4 === "function") disposers.push(d4);
+        // 通用配置入口行（settings.general.item 为 list 槽，无条件渲染）
+        var d5 = ctx.slots.inject("settings.general.item", function () {
+          return ctx.slots.register({
+            name: "settings.general.item",
+            id: "dsh-easyrewrite",
+            order: 100
+          }, EasyRewriteSettingsRow);
+        });
+        if (typeof d5 === "function") disposers.push(d5);
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
