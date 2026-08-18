@@ -987,7 +987,7 @@ window.__ModuleLoader__.load({
             "aria-checked": !!value,
             style: checkStyle,
             onClick: function (e) { e.stopPropagation(); onChange(!value); }
-          }, value ? "✓" : null)
+          }, value ? React.createElement(Primitives.IconCheckOutline16, null) : null)
         );
       }
       // Apple 风格分段控件：灰色药丸长条 + 白色小药丸高亮当前项（滑动过渡，主题自适应）
