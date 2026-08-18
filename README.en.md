@@ -79,10 +79,10 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 ## Install
 
 ```sh
-# from GitHub
-dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
-# published form (planned)
+# npm (published)
 dsh plugin --profile web add dsh-easyrewrite
+# or from GitHub
+dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
 ```
 
 Restart `dsh web`, hard-refresh (`Ctrl+Shift+R`), done.
