@@ -156,7 +156,11 @@ window.__ModuleLoader__.load({
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ sessionId: sessionId, pending: pending }),
               keepalive: true
-            }).catch(function () { /* 静默 */ });
+            }).then(function (resp) {
+              log("info", "backup", "自动备份完成", { sessionId: sessionId, status: resp.status });
+            }).catch(function (e) {
+              log("warn", "backup", "自动备份请求失败", { err: String(e && e.message ? e.message : e) });
+            });
             lastBackup = Date.now();
           } catch (e) { /* 静默 */ }
         }
