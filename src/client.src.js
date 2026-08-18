@@ -46,7 +46,7 @@ window.__ModuleLoader__.load({
       try { var v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; }
     }
     function draftConflictMode() { return getSetting(SETTING_KEYS.conflictMode, "overwrite"); }
-    function recallVisualMode() { return getSetting(SETTING_KEYS.visualMode, "minimal"); }
+    function recallVisualMode() { return getSetting(SETTING_KEYS.visualMode, "simple"); }
 
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
     var PENDING_PREFIX = "dsh-easyrewrite:pending:";
