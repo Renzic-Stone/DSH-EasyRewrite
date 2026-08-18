@@ -37,9 +37,15 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - Location: `$DSH_HOME/dsh-easyrewrite/backups/<sessionId>.json`.
 - Recovery fallback: restore only when there is no local pending state — never overwrites a draft you are actively editing.
 
-### Planned (roadmap)
-- **`< X >` version pager** on the recalled reply (viewport-anchored, scroll never jumps).
-- **Customizable recall hotkey**.
+### Version pager (< X >) — shipped (M3)
+- After every recall/edit resend, the **`‹ X/N ›`** control appears in the final reply's action strip; click (or ←/→ keys) to switch versions — **the following context follows the displayed version**.
+- **Archive swap**: switching = restore the target → open it → archive every other family member — **the workspace list always keeps exactly one active version**, a seamless switch.
+- **Viewport anchoring**: the scroll position never jumps (restored via the official `data-chat-anchor-key`).
+- Even if everything is archived, restore any version via **Settings → Plugins → Plugin config → “Versions” section**.
+
+### Recall hotkey — shipped (M3, Beta)
+- A **master toggle, off by default** (so it never clashes with other plugins' shortcuts); once enabled you can **record** any combination (at least one modifier required).
+- Triggers when the input is unfocused and the latest message in the current session is yours — equivalent to clicking that message's recall key (the confirmation capsule appears as usual).
 
 ---
 
