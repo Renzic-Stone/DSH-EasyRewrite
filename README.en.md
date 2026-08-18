@@ -22,10 +22,11 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - **One pending operation per session**, drafts persist per session across reloads and tab switches.
 - **Seamless replacement**: send executes the recall — the original session is **archived**, a **same-titled** session (history truncated before the target message) takes its place, and your edited text is sent automatically. Feels like editing the original conversation, not forking a new one.
 
-### Rewrite (内联编辑) — in progress
-- Click the bubble → inline editor (original Markdown source preserved).
-- Three editable widths (bubble width / natural wrap ≈748px / composer width), auto-grow + inner scroll.
-- Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend (attachments kept).
+### Rewrite (inline edit) — shipped (M2)
+- Click the bubble → inline editor (original Markdown source preserved), Esc cancels / Ctrl+Enter confirms.
+- **Three editable widths** (Compact: starts at bubble width, up to 360px / Standard: fixed 360px / Expanded: 748px), auto-grow + inner scroll.
+- Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend: truncate → archive original → same-titled session → edited text sent automatically.
+- Edit drafts persist per session (survive tab switch / refresh); **attachment-preserving resend** is on the roadmap.
 
 ### Planned (roadmap)
 - **`< X >` version pager** on the recalled reply (viewport-anchored, scroll never jumps).
