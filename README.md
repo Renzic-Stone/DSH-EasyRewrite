@@ -36,11 +36,32 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 
 ## Design philosophy
 
-1. **Lazy commit** — the single rule the whole plugin is built on: *context changes only at "确定" (rewrite) or "发送" (recall)*. Entering edit mode or confirming a recall is purely local draft state. Closing dsh mid-operation changes nothing.
-2. **Seamless** — recall never feels like "a new conversation appeared". The old one is archived, a same-titled replacement takes over, and the edited text is sent for you.
-3. **Zero loss** — original drafts survive send/cancel in overwrite mode; pending state persists per session; drafts are backed up locally if left too long.
-4. **Official-first** — pure official extension points (keyed `conversation.chat.node` override, official `sessions.fork` RPC, `workspaces.archiveSession`, official components & design tokens). No DSH source patches; uninstall restores everything.
-5. **One pending** — a single pending operation per session keeps the state machine simple and predictable.
+**1. Simple to use, easy to onboard, compatible by contract**
+
+- Interactions need no manual: **click the bubble to edit, recall key sits beside copy** — no new concepts, no new entry points.
+- Sensible defaults: the default settings are the right choice for most scenarios; install, restart, done.
+- Compatibility is a hard promise: only official extension points (keyed slot override, official `sessions.fork` RPC, official components & design tokens) — **no source patches, no brittle internal APIs**, actively adapted across DSH releases.
+- Uninstall restores everything; nothing of your install is left behind.
+
+**2. Faithful to the original experience, seamless**
+
+- UI language follows dsh's native design (grey-blue palette, rounded corners, pills, official icons), dark/light theme aware — feels like an official feature, not "another plugin skin".
+- Original interactions stay intact: copy key, hover timestamps, bubble look — all preserved.
+- **Lazy commit** is the foundation: entering edit mode or confirming a recall is purely local draft state; **context changes only at "确定" (rewrite) or "发送" (recall)**. Close dsh mid-way and nothing moves.
+- **Seamless replacement**: after a recall it *feels* like the original conversation was edited — the old session is archived, a same-titled replacement takes over, and your edited text is sent for you. No "a new conversation appeared" split.
+
+**3. Complete logging, fast diagnosis**
+
+- Every client step (load, confirm, pending, send-hook, fork, resume) is reported to the host and written to a unified log: `$DSH_HOME/dsh-easyrewrite.log`.
+- Uniform format (JSON lines: time / level / tag / message / data) — one reproduction is enough to locate the issue, no back-and-forth descriptions.
+- Host behaviour lands in the same log (requests, rejection reasons, exceptions), so both halves reconcile on one trail.
+- Logs stay local; nothing is uploaded.
+
+**4. Continuously updated, actively compatible**
+
+- Follows DSH releases (rc.x → stable); upstream API changes are adapted promptly.
+- Semantic versioning + CHANGELOG; breaking changes announced in advance.
+- Community-driven: issues and PRs answered, new ideas and scenarios folded into the roadmap.
 
 ---
 
