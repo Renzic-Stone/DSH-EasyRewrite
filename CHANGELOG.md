@@ -16,6 +16,9 @@
 - **三语 README**（中文默认 + English + 日本語）
 - smoke 测试（tests/smoke-host.mjs）
 - **M2 内联编辑（Rewrite）**：点击气泡原位编辑（原始 Markdown 原文）+ 三档宽度（紧凑 360 / 标准 360 / 扩展 748）+ 自动增高滚动 + Esc/Ctrl+Enter + 编辑态保留撤回键（可转撤回）+ 编辑草稿按会话持久化（pending type=edit）+ 「确定」= truncate 编辑重发（边界 → fork → 归档 → 同名新会话 → 自动发送）
+- **M3 设置页**：设置 → 插件 → 插件配置可折叠卡片（官方 PluginCard 同款样式与交互：点击标题展开/收起 + 箭头旋转 + aria 无障碍）+ 三语文案 + 全部选项即时生效（气泡编辑开关 / 关闭编辑显示撤回键 / 确认胶囊 / 视觉模式 / 统计口径 / 冲突模式 / 编辑宽度含自定义）+ 移除通用设置页入口行
+- **M3 设置 namespace**：host 内联注册 `dsh-easyrewrite` namespace（rc.7 "注册即暴露"；函数式 schema 零官方包依赖，符合官方 host 惯例）
+- **M3 草稿自动备份**：待定草稿超 10 秒自动备份本地文件（之后每 5 秒刷新）+ 处理完成即删 + 恢复兜底（仅本地无待定时恢复，绝不覆盖活动草稿）
 
 ### Changed
 - 项目更名为 dsh-easyrewrite（DSH-EasyRewrite），已发布 GitHub（tag v0.1.0 / m1-recall）

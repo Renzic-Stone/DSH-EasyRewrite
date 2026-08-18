@@ -28,12 +28,18 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend: truncate → archive original → same-titled session → edited text sent automatically.
 - Edit drafts persist per session (survive tab switch / refresh); **attachment-preserving resend** is on the roadmap.
 
+### Settings — shipped (M3)
+- **Settings → Plugins → Plugin config**: an official-style collapsible card (click the header to expand/collapse); UI language follows the interface (中文 / English / 日本語).
+- Every option applies instantly: bubble edit toggle, show recall key when bubble edit is off, recall confirmation capsule, recall visual mode (Simple / Minimal / Info), recall stats scope (user questions only), composer fill mode (Overwrite / Merge), edit width (Compact / Standard / Expanded / Custom).
+
+### Draft auto-backup — shipped (M3)
+- A pending draft left untouched for more than 10s is auto-backed-up to a local file (refreshed every 5s); the backup is removed once the draft is handled (Confirm / Send).
+- Location: `$DSH_HOME/dsh-easyrewrite/backups/<sessionId>.json`.
+- Recovery fallback: restore only when there is no local pending state — never overwrites a draft you are actively editing.
+
 ### Planned (roadmap)
 - **`< X >` version pager** on the recalled reply (viewport-anchored, scroll never jumps).
-- **Timeout auto-backup** of pending drafts to local files (cleaned up after handling).
 - **Customizable recall hotkey**.
-- **Settings page** (recall stats scope, visual modes, widths, merge mode…).
-- **Simple / Info visual modes** for pending recall (greyed bubble instead of full hide).
 
 ---
 
