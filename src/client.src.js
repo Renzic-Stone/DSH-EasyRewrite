@@ -466,13 +466,15 @@ window.__ModuleLoader__.load({
               text: afterCount === 0 ? "是否撤回这条消息？" : (onlyUser ? "撤回这条消息及其后 " + afterCount + " 条提问？" : "撤回这条消息及其后 " + afterCount + " 条内容？"),
               onConfirm: function () {
                 setConfirming(false);
-                // 惰性提交：此刻只记录 pending + 回填输入框，真正修改发生在「发送」时（发送钩子，下一步实现）
+                // 惰性提交：此刻只记录 pending + 回填输入框，真正修改发生在「发送」时
+                // 注意：anchorSeq 对窗口外历史消息会退化，必须用 node.data.seq（UserMessageNode 的真实事件 seq）
                 var conflictMode = draftConflictMode();
                 var visualMode = recallVisualMode();
+                var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
                 writePending(sessionId, {
                   type: "recall",
                   targetKey: myKey,
-                  targetSeq: anchorSeq,
+                  targetSeq: realSeq,
                   draftText: text,
                   originalDraft: draftRef.current,
                   conflictMode: conflictMode,
