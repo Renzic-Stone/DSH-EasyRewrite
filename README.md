@@ -1,117 +1,119 @@
-# dsh-easyrewrite (DSH-EasyRewrite)
+# dsh-easyrewrite（DSH-EasyRewrite）
 
-**Inline-edit & recall your own user messages in the DeepSeek Harness Web UI — lazily, seamlessly, and without ever losing your work.**
+[English](README.en.md) | [日本語](README.ja.md)
 
-Click your own message bubble to edit it in place; hit the recall button beside copy to withdraw it and everything after it. Nothing is ever really changed until you commit — the conversation, the model context, and the session log stay untouched until you press **Confirm** (rewrite) or **Send** (recall).
+**在 DeepSeek Harness Web 里内联编辑与撤回你自己的消息——惰性、无痕、零丢失。**
 
-> Compatible with DeepSeek Harness Web (rc.6+, built on official extension points only — no source patches).
+单击自己的消息气泡即可原位编辑；点击复制键旁的撤回键可撤回该消息及其后的全部内容。**一切修改都发生在你真正确认之后**——在按下「确定」（编辑）或「发送」（撤回）之前，对话、模型上下文、会话日志纹丝不动。
 
----
-
-## Features (what we've built)
-
-### Recall (撤回) — done, end to end
-- **Recall key** next to the official copy key on every user message.
-- **Inline confirmation capsule** (dsh-styled grey pill: `撤回这条消息及其后 x 条提问？` + white-on-black **Confirm / Cancel** pills).
-- **Lazy commit**: confirming only fills the composer — the real truncation happens when you press **Send**. Close dsh mid-way and nothing in the conversation changes.
-- **"正在修改" bar** inside the composer (divider + label + round ×) — × cancels the recall and restores your original draft.
-- **Overwrite / merge** fill modes; in overwrite mode your pre-recall draft is always restored after send or cancel. Zero information loss.
-- **Live count of what will be removed** (user questions only, toggleable) — 0 remaining shows `是否撤回这条消息？`.
-- **One pending operation per session**, drafts persist per session across reloads and tab switches.
-- **Seamless replacement**: send executes the recall — the original session is **archived**, a **same-titled** session (history truncated before the target message) takes its place, and your edited text is sent automatically. Feels like editing the original conversation, not forking a new one.
-
-### Rewrite (内联编辑) — in progress
-- Click the bubble → inline editor (original Markdown source preserved).
-- Three editable widths (bubble width / natural wrap ≈748px / composer width), auto-grow + inner scroll.
-- Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend (attachments kept).
-
-### Planned (roadmap)
-- **`< X >` version pager** on the recalled reply (viewport-anchored, scroll never jumps).
-- **Timeout auto-backup** of pending drafts to local files (cleaned up after handling).
-- **Customizable recall hotkey**.
-- **Settings page** (recall stats scope, visual modes, widths, merge mode…).
-- **Simple / Info visual modes** for pending recall (greyed bubble instead of full hide).
+> 兼容 DeepSeek Harness Web（rc.6+），纯官方扩展点实现，不改 DSH 源码。
 
 ---
 
-## Design philosophy
+## 已实现功能
 
-**1. Simple to use, easy to onboard, compatible by contract**
+### 撤回（Recall）——端到端完成
+- **撤回键**：每条用户消息的官方复制键旁。
+- **行内确认胶囊**（dsh 风格灰色胶囊：`撤回这条消息及其后 x 条提问？` + 白底黑字「确定/取消」）。
+- **惰性提交**：确认只回填输入框，真正截断发生在你按「发送」时；中途关掉 dsh，对话零改动。
+- **「正在修改」条**：输入框内部（分割线 + 标签 + 圆形 ×）；× 取消撤回并恢复原草稿。
+- **覆盖 / 合并**回填模式：覆盖模式下原草稿在发送/取消后都会恢复——信息零丢失。
+- **将删除数量实时统计**（仅用户提问，可开关）；0 条时显示「是否撤回这条消息？」。
+- **单会话单待定**，草稿按会话持久化（切会话/刷新不丢）。
+- **无痕替换**：发送即执行撤回——原会话**归档**，**同名新会话**（截断到目标消息之前）顶替，修改后的文本自动发出。感知上就是"原对话被编辑了"，而不是"冒出一个新对话"。
 
-- Interactions need no manual: **click the bubble to edit, recall key sits beside copy** — no new concepts, no new entry points.
-- Sensible defaults: the default settings are the right choice for most scenarios; install, restart, done.
-- Compatibility is a hard promise: only official extension points (keyed slot override, official `sessions.fork` RPC, official components & design tokens) — **no source patches, no brittle internal APIs**, actively adapted across DSH releases.
-- Uninstall restores everything; nothing of your install is left behind.
+### 内联编辑（Rewrite）——开发中
+- 单击气泡 → 原位编辑（保留原始 Markdown 原文）。
+- 三档编辑宽度（气泡宽 / 自然换行 ≈748px / 输入框宽），自动增高 + 内部滚动。
+- 编辑态保留撤回键（隐藏复制键）；「确定」= truncate 编辑重发（附件保留）。
 
-**2. Faithful to the original experience — seamless & invisible**
-
-- UI language follows dsh's native design (grey-blue palette, rounded corners, pills, official icons), dark/light theme aware — feels like an official feature, not "another plugin skin".
-- Original interactions stay intact: copy key, hover timestamps, bubble look — all preserved.
-- **Invisible**: day-to-day use barely notices the plugin — features live where you expect them, results match intuition; no popups, no interrupted rhythm.
-- **Lazy commit** is the foundation: entering edit mode or confirming a recall is purely local draft state; **context changes only at "确定" (rewrite) or "发送" (recall)**. Close dsh mid-way and nothing moves.
-- **Seamless replacement**: after a recall it *feels* like the original conversation was edited — the old session is archived, a same-titled replacement takes over, and your edited text is sent for you. No "a new conversation appeared" split.
-- **Bubble edit (landing soon)**: click the bubble to edit in place, what you edit is what you send — the natural extension of the same seamless philosophy.
-
-**3. Persistent & accident-proof**
-
-- Edit/recall drafts **persist per session**: switching chats, refreshing, even restarting dsh — progress resumes where you left it. No "lost half-written" moments.
-- In overwrite mode the pre-recall draft is restored after both send and cancel — **no data loss on any path**.
-- Long-idle pending drafts auto-backup to local files (removed once handled) — a safety net for the extreme case.
-- Every destructive step has a confirm and an undo path: confirmation capsule, × cancel, one-pending-per-session — **mistakes are recoverable, data is never lost**.
-
-**4. Complete logging, fast diagnosis**
-
-- Every client step (load, confirm, pending, send-hook, fork, resume) is reported to the host and written to a unified log: `$DSH_HOME/dsh-easyrewrite.log`.
-- Uniform format (JSON lines: time / level / tag / message / data) — one reproduction is enough to locate the issue, no back-and-forth descriptions.
-- Host behaviour lands in the same log (requests, rejection reasons, exceptions), so both halves reconcile on one trail.
-- Logs stay local; nothing is uploaded.
-
-**5. Continuously updated, actively compatible**
-
-- Follows DSH releases (rc.x → stable); upstream API changes are adapted promptly.
-- Semantic versioning + CHANGELOG; breaking changes announced in advance.
-- Community-driven: issues and PRs answered, new ideas and scenarios folded into the roadmap.
+### 规划中（Roadmap）
+- **`< X >` 版本翻页器**（回答底部，视口锚定不跳位）。
+- **草稿超时自动备份**到本地文件（处理完成即删）。
+- **可自定义撤回快捷键**。
+- **设置页**（统计口径、视觉模式、编辑宽度、覆盖/合并…）。
+- **简单 / 信息视觉模式**（撤回待定时气泡灰字而非完全隐藏）。
 
 ---
 
-## Install
+## 设计哲学
+
+**1. 简单易用，易上手，兼容性好（Simple & Compatible）**
+
+- 交互直观到不需要说明书：**点击气泡就编辑，复制键旁就撤回**——不引入任何新概念、新入口。
+- 默认即合理：默认设置就是大多数场景的最优解，装完即用，无需配置。
+- 兼容性是硬承诺：只使用官方扩展点（keyed 槽覆盖、官方 fork RPC、官方组件与设计令牌），**不碰源码、不依赖易碎内部 API**；DSH 升级换代时主动适配，绝不拿"改了你的安装"换功能。
+- 卸载即还原：不留配置残留、不改动任何官方文件。
+
+**2. 还原原版体验，无痕、无感（Faithful, Seamless & Invisible）**
+
+- 界面语言完全沿用 dsh 原生风格（灰蓝配色、圆角、胶囊、官方图标），深/浅主题自适应——像官方功能，不是"又一个插件皮肤"。
+- 原有交互原样保留：复制键、hover 发送时间、气泡外观——一个都不少。
+- **无感**：日常使用几乎感觉不到插件的存在——该有的功能都在它该在的位置，按下去的结果就是直觉预期；不弹窗打扰、不打断节奏。
+- **惰性提交**是还原体验的根基：进入编辑、确认撤回都只是本地草稿态，**context 只在「确定」（rewrite）或「发送」（recall）时真正修改**——关掉 dsh，一切纹丝不动。
+- **无痕替换**：撤回之后，感知上就是"原对话被编辑了"——原会话归档、同名新会话顶替、修改后的文本自动发出，没有"冒出一个新对话"的割裂感。
+- **气泡框编辑（即将上线）**：点击气泡即原位编辑、所见即所改——同一套无痕哲学的自然延伸。
+
+**3. 持久化保留，防手误零丢失（Persistent & Accident-proof）**
+
+- 编辑/撤回草稿**按会话持久化**：切对话、刷新页面、重启 dsh，进度原样接续，不存在"写一半没了"。
+- 覆盖模式下，回填前的原草稿在发送/取消后都会恢复——**任何操作路径都不丢数据**。
+- 待定草稿长时间未处理自动备份到本地文件（处理完成即删），极端情况也有兜底。
+- 每一步关键操作都有确认与撤销路径：确认胶囊、× 取消、单待定约束——**手误可撤回，数据不损失**。
+
+**4. 完善日志体系（Log Everything, Diagnose Fast）**
+
+- 全链路打点：client 的每个关键步骤（加载、确认、pending、发送钩子、fork、resume）自动上报 host，统一写入 `$DSH_HOME/dsh-easyrewrite.log`。
+- 统一格式（JSON 行：时间 / 级别 / 标签 / 消息 / 数据），一次复现即可定位，**不用你反复描述问题**。
+- host 自身行为同样落盘（请求、拒绝原因、异常），前后端一条链路可对账。
+- 日志只记录本地行为，不上传任何数据。
+
+**5. 持续更新，积极兼容（Keep Moving）**
+
+- 跟随 DSH 版本迭代（rc.x → 正式版），上游 API 变化第一时间适配。
+- 语义化版本 + CHANGELOG，每次改动可追溯；破坏性变更提前声明。
+- 社区驱动：issue / PR 积极响应，新点子、新场景持续并入路线图。
+
+---
+
+## 安装
 
 ```sh
-# from GitHub
+# 从 GitHub
 dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
-# published form (planned)
+# 发布到 npm 后（规划中）
 dsh plugin --profile web add dsh-easyrewrite
 ```
 
-Restart `dsh web`, hard-refresh (`Ctrl+Shift+R`), done.
+重启 `dsh web`，页面 `Ctrl+Shift+R` 硬刷新即可。
 
-> A note on **when recall works**: DSH forks only at closed-turn boundaries, so a message inside a still-open turn cannot be truncated yet — wait for the reply to finish, then recall. (The UI tells you: `该消息所在回合尚未结束…`)
-
----
-
-## Debugging
-
-Every client step is reported to the host and written to a unified log:
-
-```
-$DSH_HOME/dsh-easyrewrite.log   # e.g. ~/.dsh/dsh-easyrewrite.log
-```
-
-JSON lines: `{ t, level, tag, message, data }`.
+> **撤回时机说明**：DSH 的 fork 只能在闭合回合边界截断，未结束回合内的消息暂时无法撤回——等回复完成后即可。（界面会提示「该消息所在回合尚未结束…」）
 
 ---
 
-## Structure
+## 调试
+
+client 每一步都会上报 host 并写入统一日志：
+
+```
+$DSH_HOME/dsh-easyrewrite.log   # 例如 ~/.dsh/dsh-easyrewrite.log
+```
+
+JSON 行格式：`{ t, level, tag, message, data }`。
+
+---
+
+## 项目结构
 
 ```
 dsh-easyrewrite/
-├── lib/index.js          # host half: boundary resolution + /bubble/recall, /bubble/log
-├── src/client.src.js     # client template (icons inlined at build)
-├── assets/               # recall / edit icons (PNG, theme-adaptive via CSS invert)
+├── lib/index.js          # host half：边界解析 + /bubble/recall、/bubble/log
+├── src/client.src.js     # client 模板（图标构建期内联）
+├── assets/               # 撤回/编辑图标（PNG，深色模式 CSS invert 自适应）
 ├── build.mjs             # assets → data-URL → lib/client.js
-├── DESIGN.md             # full interaction design (v0.4, 20 product decisions)
-├── PROJECT_PLAN.md       # roadmap, architecture, git workflow
-└── docs/                 # api-facts, m0-verify
+├── DESIGN.md             # 完整交互设计（v0.4，20 项产品决策）
+├── PROJECT_PLAN.md       # 路线图、架构、git 工作流
+└── docs/                 # api-facts、m0-verify
 ```
 
 ---
