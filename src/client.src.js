@@ -317,9 +317,9 @@ window.__ModuleLoader__.load({
 
     /**
      * 编辑宽度三档（localStorage dsh-easyrewrite:editWidth；默认 wrap）：
-     *  - bubble：从气泡原宽起步（不主动改变气泡大小），随打字横向扩展，**上限 360px**（还原真实气泡）
-     *  - wrap：固定 360px（所见即所得，与 bubble 同上限）
-     *  - composer：固定 748px 顶到头（等同输入框区域）
+     *  - 紧凑 bubble：从气泡原宽起步（不主动改变气泡大小），随打字横向扩展，**上限 360px**（还原真实气泡）
+     *  - 标准 wrap：固定 360px（所见即所得，与紧凑同上限）
+     *  - 扩展 composer：固定 748px 顶到头（等同输入框区域）
      * 字符宽度估算：最长行字符数 × 8px（中文 14 / 英文 7 的折中）+ padding 28。
      */
     function editWidthFor(mode, text, initW) {
@@ -626,10 +626,38 @@ window.__ModuleLoader__.load({
         log("info", "edit", "编辑取消（原样不变）");
       }
       function confirmEdit() {
-        // 4a 占位：真正截断重发在 4b 实现
-        log("info", "edit", "确定（编辑重发逻辑待 4b）", { draft: editText.slice(0, 80) });
-        if (isEditPending) writePending(sessionId, null);
+        // 惰性提交：编辑的「确定」= 真正修改点（与撤回的「发送」等价）——截断重发
+        var newText = editText;
+        var sid = sessionId;
+        var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
+        if (isEditPending) writePending(sid, null);
         setEditing(false);
+        log("info", "edit", "确定：编辑重发", { sessionId: sid, targetSeq: realSeq, text: newText.slice(0, 80) });
+        fetch("/bubble/recall", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: sid, targetSeq: realSeq })
+        }).then(function (resp) { return resp.json(); }).then(async function (data) {
+          if (!data || !data.ok) {
+            log("warn", "edit", "编辑重发失败（边界）", { error: data && data.error, message: data && data.message });
+            return;
+          }
+          var newId = null;
+          try {
+            newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
+          } catch (e) {
+            log("error", "edit", "fork 失败（编辑重发中止）", { err: String(e && e.message ? e.message : e) });
+            return;
+          }
+          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: newText })); } catch (e) { /* ignore */ }
+          try {
+            if (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function") props.ctxWorkspaces.archiveSession(sid);
+          } catch (e) { log("warn", "edit", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
+          log("info", "edit", "编辑重发：归档原会话 + 打开新会话", { newId: newId });
+          if (typeof props.openSession === "function") props.openSession(newId);
+        }).catch(function (err) {
+          log("error", "edit", "编辑重发请求失败", { err: String(err && err.message ? err.message : err) });
+        });
       }
       function onBubbleClick(e) {
         if (editing || confirming) return;
