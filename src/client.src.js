@@ -1236,11 +1236,80 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** 切换版本（按钮与键盘共用；无组件闭包依赖）：
+     * 恢复目标（unarchive）→ 打开 → 轮询确认当前会话==目标后归档家族其余——列表只保留目标一个。 */
+    function goToVersion(fam, sessionId, nextIndex, props, cleanupRef) {
+      var next = fam.versions[nextIndex];
+      if (!next) return;
+      var anchor = captureScrollAnchor();
+      log("info", "pager", "切换版本", { from: sessionId, to: next, index: nextIndex + 1, count: fam.versions.length });
+      // 历史版本都是归档会话（无痕替换副作用），先恢复再打开；恢复失败也照常打开（幂等）
+      var doOpen = function () {
+        if (typeof props.openSession === "function") props.openSession(next);
+        // 等当前会话确认为 next（轮询 current，不猜时间）后，归档家族其余版本——列表只保留目标一个。
+        // open 未确认（超时 8s）则放弃归档，绝不误伤任何会话。
+        if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
+        var attempts = 0;
+        cleanupRef.current = setInterval(function () {
+          attempts++;
+          try {
+            var cur = typeof props.currentSessionId === "function" ? props.currentSessionId() : null;
+            if (cur === next) {
+              clearInterval(cleanupRef.current);
+              cleanupRef.current = null;
+              if (typeof props.archiveSession === "function") {
+                fam.versions.forEach(function (vid) {
+                  if (vid !== next) props.archiveSession(vid);
+                });
+              }
+              return;
+            }
+          } catch (e) { /* ignore */ }
+          if (attempts >= 40) {
+            clearInterval(cleanupRef.current);
+            cleanupRef.current = null;
+          }
+        }, 200);
+        restoreScrollAnchor(anchor);
+      };
+      if (typeof props.restoreSession === "function") {
+        try {
+          props.restoreSession(next).then(function () { doOpen(); }, function () { doOpen(); });
+          return;
+        } catch (e) { /* fallthrough */ }
+      }
+      doOpen();
+    }
+
     /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
      * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 或键盘 ←/→
      * 切换版本（sessions.open 兄弟会话），切换后滚动锚定保持文本位置不动。 */
     function VersionPager(props) {
       var sessionId = props.sessionId;
+      // —— hooks 无条件前置（React 规则：任何 return null 不得出现在 hooks 之前，否则 hook 数量漂移 → error #300）——
+      var cleanupRef = React.useRef(null);
+      React.useEffect(function () {
+        return function () {
+          // 注意：切换会卸载组件——卸载时绝不能清掉未执行的归档定时器（归档必须在切换后照常执行）
+          if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
+        };
+      }, []);
+      // 键盘 ←/→（输入框/可编辑区未聚焦时；实时读家族，避免陈旧闭包）
+      React.useEffect(function () {
+        function onKey(e) {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          var tgt = e.target;
+          if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+          var fam = familyOfSession(sessionId);
+          if (!fam || fam.versions.length < 2) return;
+          var idx = fam.index;
+          if (e.key === "ArrowLeft" && idx > 0) { e.preventDefault(); goToVersion(fam, sessionId, idx - 1, props, cleanupRef); }
+          else if (e.key === "ArrowRight" && idx < fam.versions.length - 1) { e.preventDefault(); goToVersion(fam, sessionId, idx + 1, props, cleanupRef); }
+        }
+        window.addEventListener("keydown", onKey, true);
+        return function () { window.removeEventListener("keydown", onKey, true); };
+      }, []);
+      // —— 数据与显示条件（无 hooks，可安全 return null）——
       var family = familyOfSession(sessionId);
       if (!family || family.versions.length < 2) return null;
       // 只挂在**会话最后一个回合**的 TurnTail 上（历史回合的 TurnTail 也渲染本槽，须排除）：
@@ -1263,63 +1332,9 @@ window.__ModuleLoader__.load({
       var count = family.versions.length;
       var atFirst = index <= 0;
       var atLast = index >= count - 1;
-      // 归档清理定时器（ref：快速连点时取消前一次）。
-      // 注意：切换会卸载组件——卸载时绝不能清掉未执行的归档定时器（归档必须在切换后照常执行）。
-      var cleanupRef = React.useRef(null);
       function go(delta) {
-        var next = family.versions[index + delta];
-        if (!next) return;
-        var anchor = captureScrollAnchor();
-        log("info", "pager", "切换版本", { from: sessionId, to: next, index: index + 1, count: count });
-        // 历史版本都是归档会话（无痕替换副作用），先恢复再打开；恢复失败也照常打开（幂等）
-        var doOpen = function () {
-          if (typeof props.openSession === "function") props.openSession(next);
-          // 等当前会话确认为 next（轮询 current，不猜时间）后，归档家族其余版本——列表只保留目标一个。
-          // open 未确认（超时 8s）则放弃归档，绝不误伤任何会话。
-          if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
-          var attempts = 0;
-          cleanupRef.current = setInterval(function () {
-            attempts++;
-            try {
-              var cur = typeof props.currentSessionId === "function" ? props.currentSessionId() : null;
-              if (cur === next) {
-                clearInterval(cleanupRef.current);
-                cleanupRef.current = null;
-                if (typeof props.archiveSession === "function") {
-                  family.versions.forEach(function (vid) {
-                    if (vid !== next) props.archiveSession(vid);
-                  });
-                }
-                return;
-              }
-            } catch (e) { /* ignore */ }
-            if (attempts >= 40) {
-              clearInterval(cleanupRef.current);
-              cleanupRef.current = null;
-            }
-          }, 200);
-          restoreScrollAnchor(anchor);
-        };
-        if (typeof props.restoreSession === "function") {
-          try {
-            props.restoreSession(next).then(function () { doOpen(); }, function () { doOpen(); });
-            return;
-          } catch (e) { /* fallthrough */ }
-        }
-        doOpen();
+        goToVersion(family, sessionId, index + delta, props, cleanupRef);
       }
-      // 键盘 ←/→（输入框/可编辑区未聚焦时）
-      React.useEffect(function () {
-        function onKey(e) {
-          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-          var tgt = e.target;
-          if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
-          if (e.key === "ArrowLeft" && !atFirst) { e.preventDefault(); go(-1); }
-          else if (e.key === "ArrowRight" && !atLast) { e.preventDefault(); go(1); }
-        }
-        window.addEventListener("keydown", onKey, true);
-        return function () { window.removeEventListener("keydown", onKey, true); };
-      }, []);
       var L = SETTINGS_I18N[uiLang()] || SETTINGS_I18N.en;
       var pagerStyle = {
         display: "inline-flex",

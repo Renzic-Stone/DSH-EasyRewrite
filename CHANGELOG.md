@@ -2,6 +2,12 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] — 修复 React error #300（hooks 顺序）
+
+- **VersionPager hooks 无条件前置**：此前家族版本 <2 或非最后回合时在 `useRef`/`useEffect` 之前 return null，同一组件实例后续渲染 hook 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃（部分情况 `< X >` 不显示）
+- 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
+- 全组件 hooks 顺序扫描确认无同类隐患
+
 ## [1.0.1] — review 安全与正确性修复
 
 ### Security（独立代码审查 S1-S3）
