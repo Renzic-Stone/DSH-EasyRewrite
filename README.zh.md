@@ -77,9 +77,9 @@
 ## 安装
 
 ```sh
-# 从 GitHub（npm 发布前的形式）
-dsh plugin --profile web add github:<你的用户名>/dsh-easyrewrite
-# 发布后
+# 从 GitHub
+dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
+# 发布到 npm 后（规划中）
 dsh plugin --profile web add dsh-easyrewrite
 ```
 

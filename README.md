@@ -77,8 +77,8 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 ## Install
 
 ```sh
-# from GitHub (until published to npm)
-dsh plugin --profile web add github:<your-name>/dsh-easyrewrite
+# from GitHub
+dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
 # published form (planned)
 dsh plugin --profile web add dsh-easyrewrite
 ```
