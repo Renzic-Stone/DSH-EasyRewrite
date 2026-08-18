@@ -79,10 +79,10 @@
 ## 安装
 
 ```sh
-# 从 GitHub
-dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
-# 发布到 npm 后（规划中）
+# npm 已发布（推荐）
 dsh plugin --profile web add dsh-easyrewrite
+# 或从 GitHub
+dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
 ```
 
 重启 `dsh web`，页面 `Ctrl+Shift+R` 硬刷新即可。

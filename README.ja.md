@@ -79,10 +79,10 @@
 ## インストール
 
 ```sh
-# GitHub から
-dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
-# npm 公開後（予定）
+# npm 公開済み（推奨）
 dsh plugin --profile web add dsh-easyrewrite
+# または GitHub から
+dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
 ```
 
 `dsh web` を再起動し、ページを `Ctrl+Shift+R` でハードリフレッシュしてください。
