@@ -163,6 +163,87 @@ window.__ModuleLoader__.load({
       }, 100);
     }
 
+    // ---------- 撤回快捷键（默认 Ctrl+Z；可录制；输入框未聚焦且最近一条为用户消息时生效） ----------
+    var HOTKEY_KEY = "dsh-easyrewrite:hotkey";
+    var HOTKEY_ENABLED_KEY = "dsh-easyrewrite:hotkeyEnabled";
+    var hotkeyCaptureActive = false; // 录制期间屏蔽全局触发
+    /** 总开关（默认关——与其他插件快捷键不打架；Beta 功能）。 */
+    function hotkeyEnabledSetting() {
+      return getBool(HOTKEY_ENABLED_KEY, false);
+    }
+    function setHotkeyEnabledSetting(v) {
+      setBool(HOTKEY_ENABLED_KEY, v);
+    }
+    /** 当前键位：未设置时返回空串（无默认快捷键）。 */
+    function hotkeySetting() {
+      try {
+        var v = localStorage.getItem(HOTKEY_KEY);
+        if (v && /^([a-z0-9]+(\+[a-z0-9]+)+)$/.test(v)) return v;
+      } catch (e) { /* ignore */ }
+      return "";
+    }
+    function setHotkeySetting(combo) {
+      try { localStorage.setItem(HOTKEY_KEY, combo); } catch (e) { /* ignore */ }
+    }
+    /** 录制：把 keydown 事件转成组合键串（必须带修饰键；返回 null 表示无效）。 */
+    function keydownCombo(e) {
+      var parts = [];
+      if (e.ctrlKey) parts.push("ctrl");
+      if (e.metaKey) parts.push("meta");
+      if (e.altKey) parts.push("alt");
+      if (e.shiftKey) parts.push("shift");
+      var code = String(e.code || "").toLowerCase();
+      if (!code || code.indexOf("control") === 0 || code.indexOf("meta") === 0 || code.indexOf("alt") === 0 || code.indexOf("shift") === 0) return null;
+      if (parts.length === 0) return null; // 必须至少一个修饰键
+      parts.push(code);
+      return parts.join("+");
+    }
+    /** 匹配：keydown 事件是否等于设置的组合键。 */
+    function keydownMatches(e, combo) {
+      if (!combo) return false;
+      var parts = combo.split("+");
+      var wantCtrl = parts.indexOf("ctrl") >= 0;
+      var wantMeta = parts.indexOf("meta") >= 0;
+      var wantAlt = parts.indexOf("alt") >= 0;
+      var wantShift = parts.indexOf("shift") >= 0;
+      if (String(e.code || "").toLowerCase() !== parts[parts.length - 1]) return false;
+      if (!!e.ctrlKey !== wantCtrl) return false;
+      if (!!e.metaKey !== wantMeta) return false;
+      if (!!e.altKey !== wantAlt) return false;
+      if (!!e.shiftKey !== wantShift) return false;
+      return true;
+    }
+    /** 显示文本：ctrl+keyz → "Ctrl+Z"；meta+keyz → "⌘+Z"。 */
+    function formatHotkey(combo) {
+      if (!combo) return "";
+      var parts = combo.split("+");
+      var names = parts.slice(0, -1).map(function (p) {
+        if (p === "ctrl") return "Ctrl";
+        if (p === "meta") return "⌘";
+        if (p === "alt") return "Alt";
+        if (p === "shift") return "Shift";
+        return p;
+      });
+      var code = parts[parts.length - 1] || "";
+      var keyName = code;
+      if (/^key[a-z]$/.test(code)) keyName = code.slice(3).toUpperCase();
+      else if (/^digit[0-9]$/.test(code)) keyName = code.slice(5);
+      else if (code === "arrowleft") keyName = "←";
+      else if (code === "arrowright") keyName = "→";
+      else if (code === "arrowup") keyName = "↑";
+      else if (code === "arrowdown") keyName = "↓";
+      else if (/^f([0-9]{1,2})$/.test(code)) keyName = code.toUpperCase();
+      else if (/^numpad/.test(code)) keyName = code.slice(6);
+      else if (code === "space") keyName = "Space";
+      else if (code === "enter") keyName = "Enter";
+      else if (code === "escape") keyName = "Esc";
+      else if (code === "backspace") keyName = "Backspace";
+      else if (code === "delete") keyName = "Del";
+      else if (code === "tab") keyName = "Tab";
+      else keyName = code.replace(/^key/, "").toUpperCase();
+      return names.concat([keyName]).join("+");
+    }
+
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
     var PENDING_PREFIX = "dsh-easyrewrite:pending:";
     var pendingCache = {};
@@ -467,12 +548,13 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function actionButton(title, ariaLabel, onClick, children) {
+    function actionButton(title, ariaLabel, onClick, children, dataAttr) {
       var bs = 34;
       return React.createElement("button", {
         type: "button",
         title: title,
         "aria-label": ariaLabel,
+        "data-dsh-easyrewrite": dataAttr || undefined,
         style: {
           border: "none",
           background: "transparent",
@@ -609,6 +691,13 @@ window.__ModuleLoader__.load({
         editOffShowRecall: "关闭气泡框编辑时显示撤回键",
         lockedHint: "需先关闭「气泡框编辑」才可修改此选项",
         recallConfirm: "撤回确认胶囊",
+        hotkey: "撤回快捷键",
+        hotkeyEnable: "撤回快捷键（Beta）",
+        hotkeyNone: "未设置",
+        hotkeyHint: "输入框未聚焦且最近一条为用户消息时生效",
+        hotkeyRecord: "录制",
+        hotkeyRecording: "按下新组合键…（Esc 取消）",
+        hotkeyInvalid: "至少需要一个修饰键（Ctrl/⌘/Alt/Shift）",
         visualMode: "撤回视觉模式",
         visualMinimal: "极简（无痕隐藏）",
         visualSimple: "简单（灰字+隐藏后续）",
@@ -642,6 +731,13 @@ window.__ModuleLoader__.load({
         editOffShowRecall: "Show recall key when bubble edit is off",
         lockedHint: "Turn off \"Bubble edit\" first to change this",
         recallConfirm: "Recall confirmation capsule",
+        hotkey: "Recall hotkey",
+        hotkeyEnable: "Recall hotkey (Beta)",
+        hotkeyNone: "Not set",
+        hotkeyHint: "Works when the input is unfocused and the latest message is yours",
+        hotkeyRecord: "Record",
+        hotkeyRecording: "Press a new combination… (Esc to cancel)",
+        hotkeyInvalid: "Needs at least one modifier (Ctrl/⌘/Alt/Shift)",
         visualMode: "Recall visual mode",
         visualMinimal: "Minimal (hide all)",
         visualSimple: "Simple (grey text + hide rest)",
@@ -675,6 +771,13 @@ window.__ModuleLoader__.load({
         editOffShowRecall: "バブル編集オフ時に撤回キーを表示",
         lockedHint: "先に「バブル編集」をオフにしてください",
         recallConfirm: "撤回確認カプセル",
+        hotkey: "撤回ショートカット",
+        hotkeyEnable: "撤回ショートカット（Beta）",
+        hotkeyNone: "未設定",
+        hotkeyHint: "入力欄が非フォーカスかつ直近のメッセージがユーザー時のみ有効",
+        hotkeyRecord: "録音",
+        hotkeyRecording: "新しいキーを押してください…（Esc でキャンセル）",
+        hotkeyInvalid: "修飾キー（Ctrl/⌘/Alt/Shift）が最低 1 つ必要です",
         visualMode: "撤回表示モード",
         visualMinimal: "ミニマル（完全非表示）",
         visualSimple: "シンプル（グレー文字+以降を非表示）",
@@ -724,6 +827,39 @@ window.__ModuleLoader__.load({
       var sConfirm = React.useState(recallConfirmEnabled());
       var confirmCapsule = sConfirm[0];
       var setConfirmCapsule = sConfirm[1];
+      var sHotkey = React.useState(hotkeySetting());
+      var hotkey = sHotkey[0];
+      var setHotkeyState = sHotkey[1];
+      var sHotkeyOn = React.useState(hotkeyEnabledSetting());
+      var hotkeyOn = sHotkeyOn[0];
+      var setHotkeyOn = sHotkeyOn[1];
+      var sRecording = React.useState(false);
+      var recording = sRecording[0];
+      var setRecording = sRecording[1];
+      var sHotkeyInvalid = React.useState(false);
+      var hotkeyInvalid = sHotkeyInvalid[0];
+      var setHotkeyInvalid = sHotkeyInvalid[1];
+      // 录制监听：录制期间屏蔽全局快捷键（hotkeyCaptureActive）
+      React.useEffect(function () {
+        if (!recording) return;
+        hotkeyCaptureActive = true;
+        function onKey(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.key === "Escape") { setRecording(false); setHotkeyInvalid(false); return; }
+          var combo = keydownCombo(e);
+          if (!combo) { setHotkeyInvalid(true); return; }
+          setHotkeyInvalid(false);
+          setHotkeyState(combo);
+          setHotkeySetting(combo);
+          setRecording(false);
+        }
+        window.addEventListener("keydown", onKey, true);
+        return function () {
+          hotkeyCaptureActive = false;
+          window.removeEventListener("keydown", onKey, true);
+        };
+      }, [recording]);
       var sVisual = React.useState(recallVisualMode());
       var visual = sVisual[0];
       var setVisual = sVisual[1];
@@ -838,6 +974,36 @@ window.__ModuleLoader__.load({
             setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
           }, rewrite ? L.lockedHint : null),
           switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
+        // 撤回快捷键：总开关（Beta，默认关——避免与其他插件快捷键打架）
+        switchRow(L.hotkeyEnable, hotkeyOn, function (v) {
+          setHotkeyOn(v);
+          setHotkeyEnabledSetting(v);
+          if (!v) setRecording(false);
+        }, L.hotkeyHint),
+        // 开关开启时：键位显示 + 录制
+        hotkeyOn ? React.createElement("div", { style: rowStyle },
+          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } },
+            React.createElement("span", { style: labelStyle }, L.hotkey + "：" + (hotkey ? formatHotkey(hotkey) : L.hotkeyNone)),
+            React.createElement("span", { style: hintStyle }, recording ? L.hotkeyRecording : (hotkey ? null : L.hotkeyHint)),
+            hotkeyInvalid ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-error, #d9534f)" } }, L.hotkeyInvalid) : null
+          ),
+          React.createElement("button", {
+            type: "button",
+            style: {
+              appearance: "none",
+              border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+              background: "transparent",
+              color: "var(--dsw-alias-label-secondary)",
+              borderRadius: "6px",
+              padding: "3px 10px",
+              fontSize: "12px",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              flex: "none"
+            },
+            onClick: function () { setHotkeyInvalid(false); setRecording(!recording); }
+          }, recording ? L.hotkeyRecording : L.hotkeyRecord)
+        ) : null,
           // 视觉模式
           React.createElement("div", { style: groupStyle },
             React.createElement("span", { style: labelStyle }, L.visualMode),
@@ -1404,7 +1570,7 @@ window.__ModuleLoader__.load({
               if (isEditPending) writePending(sessionId, null);
               setEditing(false);
               setConfirming(true);
-            }, iconImg(ICONS.recall, "撤回"))
+            }, iconImg(ICONS.recall, "撤回"), "recall-key")
           )
         );
       }
@@ -1486,7 +1652,7 @@ window.__ModuleLoader__.load({
                       }
                       log("info", "recall", "pending set（确认关闭，直接待定）", { targetSeq: rSeq });
                     }
-                  }, iconImg(ICONS.recall, "撤回")),
+                  }, iconImg(ICONS.recall, "撤回"), "recall-key"),
               // 编辑键：rewrite 关闭时显示（与撤回键同时）
               rewriteOnClick() ? null : actionButton("编辑", "编辑", function (e) {
                 e.stopPropagation();
@@ -1520,6 +1686,30 @@ window.__ModuleLoader__.load({
         var styleTag = injectThemeStyle();
         try { if (typeof ctx.locale === "object" && ctx.locale !== null && typeof ctx.locale.register === "function") ctx.locale.register(NS, {}); } catch (e) { /* ignore */ }
         log("info", "lifecycle", "client half active");
+        // 撤回快捷键：全局 keydown（输入框未聚焦 + 当前会话最后一条 user 消息的撤回键）
+        function onHotkeyKeydown(e) {
+          try {
+            if (hotkeyCaptureActive) return; // 录制中不触发
+            if (!hotkeyEnabledSetting()) return; // 总开关关闭
+            var hk = hotkeySetting();
+            if (!hk || !keydownMatches(e, hk)) return; // 未设置键位
+            var tgt = e.target;
+            if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.tagName === "SELECT" || tgt.isContentEditable)) return;
+            var cur = null;
+            try { var sl = ctx.sessions.list.getSnapshot(); cur = sl ? sl.current : null; } catch (err) { cur = null; }
+            if (!cur) return;
+            var flowItems = document.querySelectorAll('[data-chat-flow-kind="user"]');
+            if (!flowItems || flowItems.length === 0) return;
+            var lastUser = flowItems[flowItems.length - 1];
+            var recallKey = lastUser.querySelector('[data-dsh-easyrewrite="recall-key"]');
+            if (!recallKey) return;
+            e.preventDefault();
+            recallKey.click();
+            log("info", "hotkey", "快捷键触发撤回", { key: hotkeySetting() });
+          } catch (err) { /* ignore */ }
+        }
+        window.addEventListener("keydown", onHotkeyKeydown, true);
+        disposers.push(function () { window.removeEventListener("keydown", onHotkeyKeydown, true); });
         var d = ctx.slots.inject("conversation.chat.node", function () {
           return ctx.slots.register({
             name: "conversation.chat.node",
