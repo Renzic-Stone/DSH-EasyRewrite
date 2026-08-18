@@ -16,7 +16,8 @@
     "client": {
       "inject": [
         "slots",
-        "sessions"
+        "sessions",
+        "workspaces"
       ],
       "platform": "web"
     }
