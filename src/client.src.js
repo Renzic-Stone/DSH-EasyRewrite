@@ -856,29 +856,24 @@ window.__ModuleLoader__.load({
     function VersionPager(props) {
       var sessionId = props.sessionId;
       var family = familyOfSession(sessionId);
-      log("debug", "pager", "VersionPager render", {
-        sessionId: sessionId,
-        messageId: props.messageId,
-        familyCount: family ? family.versions.length : 0,
-        familyIndex: family ? family.index : -1,
-        hasUseSession: typeof props.useSession,
-        hasOpenSession: typeof props.openSession
-      });
       if (!family || family.versions.length < 2) return null;
-      // 只挂在会话**最后一条消息**的 TurnTail 上（历史回合的 TurnTail 也渲染本槽，须排除）：
-      // 取快照 order 最后一个非 turn-tail 节点的 messageId 与 props.messageId 对比
-      var lastNodeId = null;
+      // 只挂在**会话最后一个回合**的 TurnTail 上（历史回合的 TurnTail 也渲染本槽，须排除）：
+      // order 最后一项是 turn-tail 且其 data.closing.finalNode.messageId == 本组件的 messageId
+      var isLastTail = false;
       try {
         var snapshot = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
         if (snapshot && snapshot.chat && Array.isArray(snapshot.chat.order) && snapshot.chat.nodes && typeof snapshot.chat.nodes.get === "function") {
           var order = snapshot.chat.order;
-          for (var k = order.length - 1; k >= 0; k--) {
-            var n = snapshot.chat.nodes.get(order[k]);
-            if (n && n.kind !== "turn-tail" && typeof n.messageId === "string") { lastNodeId = n.messageId; break; }
+          if (order.length > 0) {
+            var tt = snapshot.chat.nodes.get(order[order.length - 1]);
+            if (tt && tt.kind === "turn-tail" && tt.data && tt.data.closing && tt.data.closing.finalNode) {
+              isLastTail = tt.data.closing.finalNode.messageId === props.messageId;
+            }
           }
         }
       } catch (e) { /* ignore */ }
-      if (!lastNodeId || lastNodeId !== props.messageId) return null;
+      if (!isLastTail) return null;
+      log("debug", "pager", "VersionPager shown", { messageId: props.messageId, index: family.index + 1, count: family.versions.length });
       var index = family.index;
       var count = family.versions.length;
       var atFirst = index <= 0;
