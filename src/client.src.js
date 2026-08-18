@@ -156,7 +156,7 @@ window.__ModuleLoader__.load({
           // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题
           var newId = null;
           try {
-            newId = await ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
+            newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
           } catch (e) {
             log("error", "recall", "fork 失败（发送中止）", { err: String(e && e.message ? e.message : e) });
             return;
@@ -166,8 +166,8 @@ window.__ModuleLoader__.load({
           // 2) 无痕替换：归档原会话 → 打开新会话
           var archived = false;
           try {
-            if (typeof ctxWorkspaces !== "undefined" && typeof ctxWorkspaces.archiveSession === "function") {
-              ctxWorkspaces.archiveSession(sid);
+            if (typeof props.ctxWorkspaces !== "undefined" && typeof props.ctxWorkspaces.archiveSession === "function") {
+              props.ctxWorkspaces.archiveSession(sid);
               archived = true;
             }
           } catch (e) { log("warn", "recall", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
