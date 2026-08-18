@@ -931,19 +931,19 @@ window.__ModuleLoader__.load({
         flexDirection: "column",
         gap: "16px"
       };
-      // 大项分组：组内 10px，组间 16px（bodyStyle gap），标题灰色小字
-      var sectionStyle = { display: "flex", flexDirection: "column", gap: "10px" };
+      // 大项分组：组内 10px，组间 16px（bodyStyle gap）；每级缩进 4 空格（16px）
+      var sectionStyle = { display: "flex", flexDirection: "column", gap: "10px", paddingLeft: "16px" };
       var groupTitleStyle = {
-        fontSize: "12px",
+        fontSize: "14px",
         fontWeight: 600,
-        color: "var(--dsw-alias-label-tertiary)",
+        color: "var(--dsw-alias-label-primary)",
         letterSpacing: "0.02em",
         lineHeight: "1.6"
       };
-      var rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" };
+      var rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", paddingLeft: "16px" };
       var labelStyle = { fontSize: "13px", color: "var(--dsw-alias-label-primary)" };
       var hintStyle = { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)" };
-      var groupStyle = { display: "flex", flexDirection: "column", gap: "6px" };
+      var groupStyle = { display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "16px" };
       var inputStyle = {
         width: "90px",
         border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
