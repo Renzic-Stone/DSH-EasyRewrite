@@ -497,7 +497,7 @@ window.__ModuleLoader__.load({
     // ---------- 设置卡片（设置 → 插件 → 插件配置；中英日三语） ----------
     var SETTINGS_I18N = {
       zh: {
-        title: "DSH-EasyRewrite",
+        title: "EasyRewrite",
         subtitle: "气泡编辑与撤回",
         expand: "展开",
         collapse: "收起",
@@ -523,7 +523,7 @@ window.__ModuleLoader__.load({
         instant: "设置即时生效，无需重启"
       },
       en: {
-        title: "DSH-EasyRewrite",
+        title: "EasyRewrite",
         subtitle: "Bubble edit & recall",
         expand: "Expand",
         collapse: "Collapse",
@@ -549,7 +549,7 @@ window.__ModuleLoader__.load({
         instant: "Settings apply instantly, no restart needed"
       },
       ja: {
-        title: "DSH-EasyRewrite",
+        title: "EasyRewrite",
         subtitle: "バブル編集と撤回",
         expand: "展開",
         collapse: "折りたたむ",
