@@ -955,7 +955,7 @@ window.__ModuleLoader__.load({
         color: "var(--dsw-alias-label-primary)"
       };
       var disabledInputStyle = Object.assign({}, inputStyle, { opacity: 0.45, cursor: "not-allowed" });
-      function switchRow(label, value, onChange, extraHint) {
+      function switchRow(label, value, onChange, extraHint, disabled) {
         // 圆形勾选框：选中 = 白底黑勾（与确认胶囊同设计语言）；未选中 = 灰色圆环
         var checkSize = 20;
         var checkStyle = {
@@ -977,7 +977,11 @@ window.__ModuleLoader__.load({
           userSelect: "none",
           boxSizing: "border-box"
         };
-        return React.createElement("div", { style: rowStyle, "data-dsh-easyrewrite": "switch-row" },
+        return React.createElement("div", {
+          style: Object.assign({}, rowStyle, disabled ? { opacity: 0.45, cursor: "not-allowed" } : null),
+          "data-dsh-easyrewrite": "switch-row",
+          title: disabled ? (extraHint || "") : undefined
+        },
           React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px", flex: "1", minWidth: "0" } },
             React.createElement("span", { style: labelStyle }, label),
             extraHint ? React.createElement("span", { style: hintStyle }, extraHint) : null
@@ -985,8 +989,9 @@ window.__ModuleLoader__.load({
           React.createElement("div", {
             role: "checkbox",
             "aria-checked": !!value,
-            style: checkStyle,
-            onClick: function (e) { e.stopPropagation(); onChange(!value); }
+            "aria-disabled": disabled || undefined,
+            style: Object.assign({}, checkStyle, disabled ? { cursor: "not-allowed" } : null),
+            onClick: function (e) { e.stopPropagation(); if (disabled) return; onChange(!value); }
           }, value ? React.createElement(Primitives.IconCheckOutline16, null) : null)
         );
       }
@@ -1063,9 +1068,8 @@ window.__ModuleLoader__.load({
             React.createElement("span", { style: groupTitleStyle }, L.sectionEdit),
             switchRow(L.rewrite, rewrite, function (v) { setRewrite(v); setBool("dsh-easyrewrite:rewriteOnClick", v); }),
             switchRow(L.editOffShowRecall, showRecall, function (v) {
-              if (rewrite) return; // 锁定：rewrite 开时不可改
               setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
-            }, rewrite ? L.lockedHint : null),
+            }, rewrite ? L.lockedHint : null, rewrite),
             // 编辑宽度：三固定 + 自定义（固定时输入框禁用置灰）
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.editWidth),
