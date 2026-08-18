@@ -317,8 +317,8 @@ window.__ModuleLoader__.load({
 
     /**
      * 编辑宽度三档（localStorage dsh-easyrewrite:editWidth；默认 wrap）：
-     *  - bubble：从气泡原宽起步（不主动改变气泡大小），随打字横向扩展
-     *  - wrap：从适中宽度（360px）起步，随打字扩展到 748px
+     *  - bubble：从气泡原宽起步（不主动改变气泡大小），随打字横向扩展，**上限 360px**（还原真实气泡）
+     *  - wrap：固定 360px（所见即所得，与 bubble 同上限）
      *  - composer：固定 748px 顶到头（等同输入框区域）
      * 字符宽度估算：最长行字符数 × 8px（中文 14 / 英文 7 的折中）+ padding 28。
      */
@@ -329,8 +329,8 @@ window.__ModuleLoader__.load({
       for (var i = 0; i < lines.length; i++) {
         if (lines[i].length > longest) longest = lines[i].length;
       }
-      var contentW = Math.min(longest * 8 + 28, 748);
-      var base = mode === "bubble" ? (initW || 240) : 360;
+      var contentW = Math.min(longest * 8 + 28, 360); // 气泡上限 360px
+      var base = mode === "bubble" ? (initW || 200) : 360;
       return Math.max(base, contentW);
     }
     function editWidthMode() {
