@@ -43,21 +43,30 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - Compatibility is a hard promise: only official extension points (keyed slot override, official `sessions.fork` RPC, official components & design tokens) — **no source patches, no brittle internal APIs**, actively adapted across DSH releases.
 - Uninstall restores everything; nothing of your install is left behind.
 
-**2. Faithful to the original experience, seamless**
+**2. Faithful to the original experience — seamless & invisible**
 
 - UI language follows dsh's native design (grey-blue palette, rounded corners, pills, official icons), dark/light theme aware — feels like an official feature, not "another plugin skin".
 - Original interactions stay intact: copy key, hover timestamps, bubble look — all preserved.
+- **Invisible**: day-to-day use barely notices the plugin — features live where you expect them, results match intuition; no popups, no interrupted rhythm.
 - **Lazy commit** is the foundation: entering edit mode or confirming a recall is purely local draft state; **context changes only at "确定" (rewrite) or "发送" (recall)**. Close dsh mid-way and nothing moves.
 - **Seamless replacement**: after a recall it *feels* like the original conversation was edited — the old session is archived, a same-titled replacement takes over, and your edited text is sent for you. No "a new conversation appeared" split.
+- **Bubble edit (landing soon)**: click the bubble to edit in place, what you edit is what you send — the natural extension of the same seamless philosophy.
 
-**3. Complete logging, fast diagnosis**
+**3. Persistent & accident-proof**
+
+- Edit/recall drafts **persist per session**: switching chats, refreshing, even restarting dsh — progress resumes where you left it. No "lost half-written" moments.
+- In overwrite mode the pre-recall draft is restored after both send and cancel — **no data loss on any path**.
+- Long-idle pending drafts auto-backup to local files (removed once handled) — a safety net for the extreme case.
+- Every destructive step has a confirm and an undo path: confirmation capsule, × cancel, one-pending-per-session — **mistakes are recoverable, data is never lost**.
+
+**4. Complete logging, fast diagnosis**
 
 - Every client step (load, confirm, pending, send-hook, fork, resume) is reported to the host and written to a unified log: `$DSH_HOME/dsh-easyrewrite.log`.
 - Uniform format (JSON lines: time / level / tag / message / data) — one reproduction is enough to locate the issue, no back-and-forth descriptions.
 - Host behaviour lands in the same log (requests, rejection reasons, exceptions), so both halves reconcile on one trail.
 - Logs stay local; nothing is uploaded.
 
-**4. Continuously updated, actively compatible**
+**5. Continuously updated, actively compatible**
 
 - Follows DSH releases (rc.x → stable); upstream API changes are adapted promptly.
 - Semantic versioning + CHANGELOG; breaking changes announced in advance.
