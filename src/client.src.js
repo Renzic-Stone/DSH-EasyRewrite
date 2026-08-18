@@ -88,6 +88,19 @@ window.__ModuleLoader__.load({
       } catch (e) { /* ignore */ }
       return null;
     }
+    /** 列出全部版本家族（localStorage 扫描，供设置卡片恢复入口使用）。 */
+    function listVersionFamilies() {
+      var out = [];
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf(VERSIONS_PREFIX) !== 0) continue;
+          var fam = readVersionFamily(k);
+          if (fam) out.push(fam);
+        }
+      } catch (e) { /* ignore */ }
+      return out;
+    }
     /** 撤回/编辑重发成功后登记：旧会话 + 新 fork 会话归入同一版本家族。 */
     function registerVersionFork(oldId, newId) {
       try {
@@ -589,7 +602,7 @@ window.__ModuleLoader__.load({
     var SETTINGS_I18N = {
       zh: {
         title: "EasyRewrite",
-        subtitle: "气泡编辑与撤回",
+        subtitle: "简单易用的撤回重编辑",
         expand: "展开",
         collapse: "收起",
         rewrite: "气泡框编辑（点击气泡原位修改）",
@@ -614,11 +627,15 @@ window.__ModuleLoader__.load({
         instant: "设置即时生效，无需重启",
         pagerTitle: "版本切换（撤回/编辑重发）",
         pagerPrev: "上一个版本",
-        pagerNext: "下一个版本"
+        pagerNext: "下一个版本",
+        versionFamilies: "版本家族（撤回/编辑重发）",
+        versionFamilyNone: "暂无版本家族",
+        versionRestoreOpen: "恢复并打开",
+        versionCount: "个版本"
       },
       en: {
         title: "EasyRewrite",
-        subtitle: "Bubble edit & recall",
+        subtitle: "Simple & easy recall and re-edit",
         expand: "Expand",
         collapse: "Collapse",
         rewrite: "Bubble edit (click bubble to edit in place)",
@@ -643,11 +660,15 @@ window.__ModuleLoader__.load({
         instant: "Settings apply instantly, no restart needed",
         pagerTitle: "Version pager (recall/edit resends)",
         pagerPrev: "Previous version",
-        pagerNext: "Next version"
+        pagerNext: "Next version",
+        versionFamilies: "Version families (recall/edit resends)",
+        versionFamilyNone: "None yet",
+        versionRestoreOpen: "Restore & open",
+        versionCount: "versions"
       },
       ja: {
         title: "EasyRewrite",
-        subtitle: "バブル編集と撤回",
+        subtitle: "簡単で使いやすい撤回・再編集",
         expand: "展開",
         collapse: "折りたたむ",
         rewrite: "バブル編集（クリックでその場編集）",
@@ -672,7 +693,11 @@ window.__ModuleLoader__.load({
         instant: "設定は即時反映、再起動不要",
         pagerTitle: "バージョン切替（撤回/編集再送）",
         pagerPrev: "前のバージョン",
-        pagerNext: "次のバージョン"
+        pagerNext: "次のバージョン",
+        versionFamilies: "バージョンファミリー（撤回/編集再送）",
+        versionFamilyNone: "まだありません",
+        versionRestoreOpen: "復元して開く",
+        versionCount: "バージョン"
       }
     };
     function uiLang() {
@@ -845,6 +870,50 @@ window.__ModuleLoader__.load({
               })
             )
           ),
+          // 版本家族管理：全归档后也能从这里恢复并打开（官方无归档恢复入口）
+          React.createElement("div", { style: groupStyle },
+            React.createElement("span", { style: labelStyle }, L.versionFamilies),
+            (function () {
+              var families = listVersionFamilies();
+              if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
+              return families.map(function (fam) {
+                return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "4px", padding: "6px 0", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.18))" } },
+                  React.createElement("span", { style: hintStyle }, fam.versions.length + " " + L.versionCount),
+                  fam.versions.map(function (vid, vi) {
+                    return React.createElement("div", { key: vid, style: rowStyle },
+                      React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none" } }, "v" + (vi + 1)),
+                      React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, vid),
+                      React.createElement("button", {
+                        type: "button",
+                        style: {
+                          appearance: "none",
+                          border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+                          background: "transparent",
+                          color: "var(--dsw-alias-label-secondary)",
+                          borderRadius: "6px",
+                          padding: "2px 8px",
+                          fontSize: "12px",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          flex: "none"
+                        },
+                        onClick: function () {
+                          fetch("/bubble/unarchive", {
+                            method: "POST",
+                            headers: { "content-type": "application/json" },
+                            body: JSON.stringify({ sessionId: vid }),
+                            keepalive: true
+                          }).then(function () {
+                            if (typeof props.openSession === "function") props.openSession(vid);
+                          }).catch(function () { /* ignore */ });
+                        }
+                      }, L.versionRestoreOpen)
+                    );
+                  })
+                );
+              });
+            })()
+          ),
           React.createElement("span", { style: hintStyle }, L.instant)
         ) : null
       );
@@ -905,6 +974,26 @@ window.__ModuleLoader__.load({
         }
         doOpen();
       }
+      // DOM 探测：确认组件实际渲染状态（占位/文字/样式）
+      React.useEffect(function () {
+        try {
+          var el = document.querySelector('[data-dsh-easyrewrite="version-pager"]');
+          if (!el) { log("debug", "pager", "VersionPager dom", { found: false }); return; }
+          var cs = window.getComputedStyle(el);
+          log("debug", "pager", "VersionPager dom", {
+            found: true,
+            w: el.offsetWidth,
+            h: el.offsetHeight,
+            text: el.textContent,
+            childCount: el.children.length,
+            display: cs.display,
+            visibility: cs.visibility,
+            opacity: cs.opacity,
+            color: cs.color,
+            fontSize: cs.fontSize
+          });
+        } catch (e) { log("debug", "pager", "VersionPager dom", { err: String(e && e.message ? e.message : e) }); }
+      }, []);
       // 键盘 ←/→（输入框/可编辑区未聚焦时）
       React.useEffect(function () {
         function onKey(e) {
@@ -1449,7 +1538,12 @@ window.__ModuleLoader__.load({
           return ctx.slots.register({
             name: "settings.plugin.item",
             key: "dsh-easyrewrite",
-            order: 30
+            order: 30,
+            inject: function () {
+              return {
+                openSession: function (id) { ctx.sessions.open(id); }
+              };
+            }
           }, EasyRewriteSettingsCard);
         });
         if (typeof d4 === "function") disposers.push(d4);
