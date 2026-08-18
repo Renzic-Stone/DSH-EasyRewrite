@@ -60,6 +60,96 @@ window.__ModuleLoader__.load({
     function editOffShowRecall() { return getBool("dsh-easyrewrite:editOffShowRecall", true); }
     function recallConfirmEnabled() { return getBool("dsh-easyrewrite:recallConfirm", true); }
 
+    // ---------- 版本树（< X > 翻页器）：localStorage dsh-easyrewrite:versions:<rootId> ----------
+    // 每个版本 = 一次撤回/编辑重发产生的真实 fork 会话；rootId = 家族第一次 fork 前的原会话。
+    var VERSIONS_PREFIX = "dsh-easyrewrite:versions:";
+    function readVersionFamily(key) {
+      try {
+        var raw = localStorage.getItem(key);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.versions)) return null;
+        var versions = parsed.versions.filter(function (x) { return typeof x === "string"; });
+        if (versions.length === 0) return null;
+        return { rootId: key.slice(VERSIONS_PREFIX.length), versions: versions };
+      } catch (e) { return null; }
+    }
+    function familyOfSession(sessionId) {
+      try {
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (!k || k.indexOf(VERSIONS_PREFIX) !== 0) continue;
+          var fam = readVersionFamily(k);
+          if (fam && fam.versions.indexOf(sessionId) >= 0) {
+            fam.index = fam.versions.indexOf(sessionId);
+            return fam;
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return null;
+    }
+    /** 撤回/编辑重发成功后登记：旧会话 + 新 fork 会话归入同一版本家族。 */
+    function registerVersionFork(oldId, newId) {
+      try {
+        if (!oldId || !newId || oldId === newId) return null;
+        var fam = familyOfSession(oldId);
+        var rootId = fam ? fam.rootId : oldId;
+        var versions = fam ? fam.versions.slice() : [oldId];
+        if (versions.indexOf(newId) < 0) versions.push(newId);
+        localStorage.setItem(VERSIONS_PREFIX + rootId, JSON.stringify({ versions: versions, updatedAt: Date.now() }));
+        log("info", "pager", "版本登记", { rootId: rootId, versions: versions });
+        return { rootId: rootId, versions: versions };
+      } catch (e) { return null; }
+    }
+    /** 切换版本时的滚动锚定：记录视口内第一个消息节点的锚 key 与其视口偏移。 */
+    function captureScrollAnchor() {
+      try {
+        var nodes = document.querySelectorAll("[data-chat-anchor-key]");
+        for (var i = 0; i < nodes.length; i++) {
+          var rect = nodes[i].getBoundingClientRect();
+          if (rect.bottom >= 0) {
+            return { key: nodes[i].getAttribute("data-chat-anchor-key"), top: Math.max(0, rect.top) };
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return null;
+    }
+    function scrollContainerOf(el) {
+      var cur = el;
+      while (cur && cur !== document.body) {
+        try {
+          var cs = window.getComputedStyle(cur);
+          if (/(auto|scroll|overlay)/.test(cs.overflowY)) return cur;
+        } catch (e) { return document.scrollingElement || document.documentElement; }
+        cur = cur.parentElement;
+      }
+      return document.scrollingElement || document.documentElement;
+    }
+    function restoreScrollAnchor(anchor) {
+      if (!anchor || !anchor.key) return;
+      var safeKey = String(anchor.key).replace(/"/g, '\"');
+      var attempts = 0;
+      var timer = setInterval(function () {
+        attempts++;
+        try {
+          var el = document.querySelector('[data-chat-anchor-key="' + safeKey + '"]');
+          if (el) {
+            var container = scrollContainerOf(el);
+            var rect = el.getBoundingClientRect();
+            var delta = rect.top - anchor.top;
+            if (container === document.scrollingElement || container === document.documentElement) {
+              window.scrollBy(0, delta);
+            } else {
+              container.scrollTop += delta;
+            }
+            clearInterval(timer);
+            return;
+          }
+        } catch (e) { /* ignore */ }
+        if (attempts >= 30) clearInterval(timer); // 最多等 ~3s
+      }, 100);
+    }
+
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
     var PENDING_PREFIX = "dsh-easyrewrite:pending:";
     var pendingCache = {};
@@ -279,6 +369,7 @@ window.__ModuleLoader__.load({
             return;
           }
           writePending(sid, null);
+          registerVersionFork(sid, newId);
           try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: sendText })); } catch (e) { /* ignore */ }
           // 2) 无痕替换：归档原会话 → 打开新会话
           var archived = false;
@@ -520,7 +611,10 @@ window.__ModuleLoader__.load({
         wCustom: "自定义",
         customWidth: "自定义宽度 (px)",
         placeholderCustom: "如 480",
-        instant: "设置即时生效，无需重启"
+        instant: "设置即时生效，无需重启",
+        pagerTitle: "版本切换（撤回/编辑重发）",
+        pagerPrev: "上一个版本",
+        pagerNext: "下一个版本"
       },
       en: {
         title: "EasyRewrite",
@@ -546,7 +640,10 @@ window.__ModuleLoader__.load({
         wCustom: "Custom",
         customWidth: "Custom width (px)",
         placeholderCustom: "e.g. 480",
-        instant: "Settings apply instantly, no restart needed"
+        instant: "Settings apply instantly, no restart needed",
+        pagerTitle: "Version pager (recall/edit resends)",
+        pagerPrev: "Previous version",
+        pagerNext: "Next version"
       },
       ja: {
         title: "EasyRewrite",
@@ -572,7 +669,10 @@ window.__ModuleLoader__.load({
         wCustom: "カスタム",
         customWidth: "カスタム幅 (px)",
         placeholderCustom: "例: 480",
-        instant: "設定は即時反映、再起動不要"
+        instant: "設定は即時反映、再起動不要",
+        pagerTitle: "バージョン切替（撤回/編集再送）",
+        pagerPrev: "前のバージョン",
+        pagerNext: "次のバージョン"
       }
     };
     function uiLang() {
@@ -747,6 +847,93 @@ window.__ModuleLoader__.load({
           ),
           React.createElement("span", { style: hintStyle }, L.instant)
         ) : null
+      );
+    }
+
+    /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
+     * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 或键盘 ←/→
+     * 切换版本（sessions.open 兄弟会话），切换后滚动锚定保持文本位置不动。 */
+    function VersionPager(props) {
+      var sessionId = props.sessionId;
+      var family = familyOfSession(sessionId);
+      if (!family || family.versions.length < 2) return null;
+      // 只挂最后一条 assistant 消息（messageId 对比快照中最后的 assistant 节点）
+      var lastAssistantId = null;
+      try {
+        var snapshot = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
+        if (snapshot && snapshot.chat && Array.isArray(snapshot.chat.order) && snapshot.chat.nodes && typeof snapshot.chat.nodes.get === "function") {
+          var order = snapshot.chat.order;
+          for (var k = order.length - 1; k >= 0; k--) {
+            var n = snapshot.chat.nodes.get(order[k]);
+            if (n && n.kind === "assistant" && typeof n.messageId === "string") { lastAssistantId = n.messageId; break; }
+          }
+        }
+      } catch (e) { /* ignore */ }
+      if (!lastAssistantId || lastAssistantId !== props.messageId) return null;
+      var index = family.index;
+      var count = family.versions.length;
+      var atFirst = index <= 0;
+      var atLast = index >= count - 1;
+      function go(delta) {
+        var next = family.versions[index + delta];
+        if (!next) return;
+        var anchor = captureScrollAnchor();
+        log("info", "pager", "切换版本", { from: sessionId, to: next, index: index + 1, count: count });
+        if (typeof props.openSession === "function") props.openSession(next);
+        restoreScrollAnchor(anchor);
+      }
+      // 键盘 ←/→（输入框/可编辑区未聚焦时）
+      React.useEffect(function () {
+        function onKey(e) {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          var tgt = e.target;
+          if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+          if (e.key === "ArrowLeft" && !atFirst) { e.preventDefault(); go(-1); }
+          else if (e.key === "ArrowRight" && !atLast) { e.preventDefault(); go(1); }
+        }
+        window.addEventListener("keydown", onKey, true);
+        return function () { window.removeEventListener("keydown", onKey, true); };
+      }, []);
+      var L = SETTINGS_I18N[uiLang()] || SETTINGS_I18N.en;
+      var pagerStyle = {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "2px",
+        fontSize: "12px",
+        color: "var(--dsw-alias-label-tertiary)",
+        fontVariantNumeric: "tabular-nums"
+      };
+      var btnStyle = {
+        appearance: "none",
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        color: "var(--dsw-alias-label-secondary)",
+        padding: "2px 6px",
+        borderRadius: "6px",
+        fontSize: "13px",
+        lineHeight: "16px",
+        fontFamily: "inherit"
+      };
+      function btnDisabled(flag) { return Object.assign({}, btnStyle, flag ? { opacity: 0.35, cursor: "default" } : {}); }
+      return React.createElement("span", { style: pagerStyle, "data-dsh-easyrewrite": "version-pager", title: L.pagerTitle },
+        React.createElement("button", {
+          type: "button",
+          className: "dbe-pager-btn",
+          style: btnDisabled(atFirst),
+          disabled: atFirst,
+          "aria-label": L.pagerPrev,
+          onClick: function () { go(-1); }
+        }, "‹"),
+        React.createElement("span", { style: { padding: "0 3px", fontSize: "12px" } }, (index + 1) + "/" + count),
+        React.createElement("button", {
+          type: "button",
+          className: "dbe-pager-btn",
+          style: btnDisabled(atLast),
+          disabled: atLast,
+          "aria-label": L.pagerNext,
+          onClick: function () { go(1); }
+        }, "›")
       );
     }
 
@@ -988,6 +1175,7 @@ window.__ModuleLoader__.load({
             return;
           }
           try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: newText })); } catch (e) { /* ignore */ }
+          registerVersionFork(sid, newId);
           try {
             if (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function") props.ctxWorkspaces.archiveSession(sid);
           } catch (e) { log("warn", "edit", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
@@ -1190,7 +1378,8 @@ window.__ModuleLoader__.load({
         "body[data-ds-dark-theme] [data-dsh-easyrewrite] img{filter:invert(1)}" +
         "@media (hover:hover){[data-dsh-easyrewrite][data-time-hover-root] .dbe-time{opacity:0;transition:opacity 80ms}" +
         "[data-dsh-easyrewrite][data-time-hover-root]:hover .dbe-time,[data-dsh-easyrewrite][data-time-hover-root]:focus-within .dbe-time{opacity:1}}" +
-        "[data-dsh-easyrewrite=\"recall-bar\"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}";
+        "[data-dsh-easyrewrite=\"recall-bar\"] .dbe-recall-x:hover{background:var(--dsw-alias-interactive-bg-active,rgba(128,128,128,0.24));color:var(--dsw-alias-label-primary)}" +
+        "[data-dsh-easyrewrite=\"version-pager\"] .dbe-pager-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.14));color:var(--dsw-alias-label-primary)}";
       document.head.appendChild(tag);
       return tag;
     }
@@ -1241,6 +1430,20 @@ window.__ModuleLoader__.load({
           }, EasyRewriteSettingsCard);
         });
         if (typeof d4 === "function") disposers.push(d4);
+        // 版本翻页器 < X >：assistant 消息操作区（最后回答底部）
+        var d5 = ctx.slots.inject("conversation.chat.assistant-actions", function () {
+          return ctx.slots.register({
+            name: "conversation.chat.assistant-actions",
+            id: "dsh-easyrewrite-version-pager",
+            order: 10,
+            inject: function () {
+              return {
+                openSession: function (id) { ctx.sessions.open(id); }
+              };
+            }
+          }, VersionPager);
+        });
+        if (typeof d5 === "function") disposers.push(d5);
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
