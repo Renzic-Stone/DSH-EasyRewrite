@@ -13,6 +13,24 @@ window.__ModuleLoader__.load({
 
     var NS = "dsh-easyrewrite";
 
+    /** 统一日志：console 输出 + 上报 host 落盘（$DSH_HOME/dsh-easyrewrite.log）。 */
+    function log(level, tag, message, data) {
+      try {
+        var prefix = "[dsh-easyrewrite][" + level + "] " + (tag ? "[" + tag + "] " : "");
+        if (level === "error") console.error(prefix + message, data !== undefined ? data : "");
+        else if (level === "warn") console.warn(prefix + message, data !== undefined ? data : "");
+        else console.info(prefix + message, data !== undefined ? data : "");
+        try {
+          fetch("/bubble/log", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ level: level, tag: tag, message: message, data: data !== undefined ? data : null }),
+            keepalive: true
+          }).catch(function () { /* 静默 */ });
+        } catch (e) { /* 静默 */ }
+      } catch (e) { /* 静默 */ }
+    }
+
     /** 操作区图标（构建期内联，自包含） */
     var ICONS = {
       edit: "data:image/png;base64,__DASH_EDIT_ICON__",
@@ -101,7 +119,7 @@ window.__ModuleLoader__.load({
             ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
           }
           writePending(sessionId, null);
-          console.info("[dsh-easyrewrite] recall cancelled (恢复原草稿)");
+          log("info", "recall", "pending cancelled（恢复原草稿）");
         });
         bar.appendChild(label);
         bar.appendChild(spacer);
@@ -132,9 +150,9 @@ window.__ModuleLoader__.load({
           if (!data || !data.ok) {
             var errText = (data && data.error) || "unknown";
             var msg = (data && data.message) || "";
-            console.warn("[dsh-easyrewrite] 撤回失败（发送中止）：", errText, msg);
+            log("warn", "recall", "撤回失败（发送中止）", { error: errText, message: msg });
             if (errText === "turn-open") {
-              console.warn("[dsh-easyrewrite] 提示：请等待当前回复完成（回合结束）后再撤回");
+              log("warn", "recall", "提示：请等待当前回复完成（回合结束）后再撤回");
             }
             return;
           }
@@ -142,7 +160,7 @@ window.__ModuleLoader__.load({
           try { localStorage.setItem("dsh-easyrewrite:resume-send:" + data.newId, JSON.stringify({ draftText: p.draftText })); } catch (e) { /* ignore */ }
           if (typeof props.openSession === "function") props.openSession(data.newId);
         }).catch(function (err) {
-          console.warn("[dsh-easyrewrite] 撤回请求失败（发送中止）：", err);
+          log("error", "recall", "撤回请求失败（发送中止）", { err: String(err && err.message ? err.message : err) });
         });
       }
       React.useEffect(function () {
@@ -184,7 +202,7 @@ window.__ModuleLoader__.load({
         var ia = props.inputActions;
         if (ia && typeof ia.setDraft === "function" && typeof ia.submit === "function") {
           ia.setDraft(r.draftText);
-          setTimeout(function () { try { ia.submit(); } catch (e) { console.warn("[dsh-easyrewrite] 自动发送失败：", e); } }, 60);
+          setTimeout(function () { try { ia.submit(); } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); } }, 60);
         }
       }, [sessionId, resumeKey]);
 
@@ -411,7 +429,7 @@ window.__ModuleLoader__.load({
           }
         }
       } catch (err) {
-        console.warn("[dsh-easyrewrite] 会话快照读取失败（数量显示 0）：", err);
+        log("warn", "count", "会话快照读取失败（数量显示 0）", { err: String(err && err.message ? err.message : err) });
       }
       // 一次性诊断（数量显示 0 时用于定位数据源）
       if (!window.__dshBubbleEditDebug) {
@@ -426,7 +444,7 @@ window.__ModuleLoader__.load({
           chatValuesLen: snapshot && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function" ? snapshot.chat.nodes.values().length : -1,
           anchorSeq: anchorSeq
         };
-        console.info("[dsh-easyrewrite] snapshot debug:", JSON.stringify(diag));
+        log("info", "debug", "snapshot debug", diag);
       }
 
       // 发送时间（hover 显示，对齐官方 data-time-hover-root 机制）
@@ -492,7 +510,7 @@ window.__ModuleLoader__.load({
                   var nextDraft = (conflictMode === "merge" && draftRef.current !== "") ? draftRef.current + "\n" + text : text;
                   ia.setDraft(nextDraft);
                 }
-                console.info("[dsh-easyrewrite] recall pending set（发送时执行真正撤回）");
+                log("info", "recall", "pending set（发送时执行真正撤回）", { sessionId: sessionId, targetSeq: realSeq, mode: conflictMode, visual: visualMode });
               },
               onCancel: function () { setConfirming(false); }
             })
@@ -502,7 +520,7 @@ window.__ModuleLoader__.load({
               actionButton("撤回", "撤回", function (e) {
                 e.stopPropagation();
                 if (pending && pending.type === "recall") {
-                  console.info("[dsh-easyrewrite] 已有待处理撤回（单待定约束），请先取消或发送");
+                  log("warn", "recall", "已有待处理撤回（单待定约束）");
                   return;
                 }
                 setConfirming(true);
@@ -533,7 +551,7 @@ window.__ModuleLoader__.load({
       ctx.effect(function () {
         var disposers = [];
         var styleTag = injectThemeStyle();
-        console.info("[dsh-easyrewrite] client half active (part2.1)");
+        log("info", "lifecycle", "client half active");
         var d = ctx.slots.inject("conversation.chat.node", function () {
           return ctx.slots.register({
             name: "conversation.chat.node",
@@ -557,7 +575,7 @@ window.__ModuleLoader__.load({
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
-          console.info("[dsh-easyrewrite] client half unloaded");
+          log("info", "lifecycle", "client half unloaded");
         };
       }, "dsh-easyrewrite: UserBubbleView overlay");
     }
