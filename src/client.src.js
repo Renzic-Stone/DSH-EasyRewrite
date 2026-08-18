@@ -499,6 +499,8 @@ window.__ModuleLoader__.load({
       zh: {
         title: "DSH-EasyRewrite",
         subtitle: "气泡编辑与撤回",
+        expand: "展开",
+        collapse: "收起",
         rewrite: "气泡框编辑（点击气泡原位修改）",
         editOffShowRecall: "关闭气泡框编辑时显示撤回键",
         lockedHint: "需先关闭「气泡框编辑」才可修改此选项",
@@ -523,6 +525,8 @@ window.__ModuleLoader__.load({
       en: {
         title: "DSH-EasyRewrite",
         subtitle: "Bubble edit & recall",
+        expand: "Expand",
+        collapse: "Collapse",
         rewrite: "Bubble edit (click bubble to edit in place)",
         editOffShowRecall: "Show recall key when bubble edit is off",
         lockedHint: "Turn off \"Bubble edit\" first to change this",
@@ -547,6 +551,8 @@ window.__ModuleLoader__.load({
       ja: {
         title: "DSH-EasyRewrite",
         subtitle: "バブル編集と撤回",
+        expand: "展開",
+        collapse: "折りたたむ",
         rewrite: "バブル編集（クリックでその場編集）",
         editOffShowRecall: "バブル編集オフ時に撤回キーを表示",
         lockedHint: "先に「バブル編集」をオフにしてください",
@@ -580,6 +586,9 @@ window.__ModuleLoader__.load({
     /** 设置卡片：注册进 settings.plugin.item（设置 → 插件 → 插件配置）。 */
     function EasyRewriteSettingsCard() {
       var L = SETTINGS_I18N[uiLang()] || SETTINGS_I18N.en;
+      var openState = React.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
       // 控件状态（初始化自 localStorage）
       var sRewrite = React.useState(rewriteOnClick());
       var rewrite = sRewrite[0];
@@ -606,18 +615,43 @@ window.__ModuleLoader__.load({
       var customW = sCustom[0];
       var setCustomW = sCustom[1];
 
+      // 官方 PluginCard 同款：卡片/展开态/头部/标题/描述/箭头/内容区
       var cardStyle = {
-        border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))",
+        border: "1px solid var(--dsw-alias-border-l2)",
+        background: "var(--dsw-alias-bg-layer-3)",
         borderRadius: "12px",
-        padding: "14px 16px",
+        listStyle: "none",
+        transition: "border-color .16s, background .16s"
+      };
+      var cardOpenStyle = { background: "var(--dsw-alias-bg-layer-2)", borderColor: "var(--dsw-alias-label-dimmed)" };
+      var headStyle = {
+        appearance: "none",
+        width: "100%",
+        font: "inherit",
+        color: "inherit",
+        textAlign: "left",
+        cursor: "pointer",
+        background: "transparent",
+        border: "none",
+        borderRadius: "12px",
+        display: "flex",
+        alignItems: "center",
+        gap: "12px",
+        padding: "14px 16px"
+      };
+      var headTextStyle = { display: "flex", flexDirection: "column", flex: "1", minWidth: "0", gap: "4px" };
+      var titleStyle = { color: "var(--dsw-alias-label-primary)", fontSize: "15px", fontWeight: 600, lineHeight: "1.4" };
+      var subStyle = { color: "var(--dsw-alias-label-tertiary)", fontSize: "13px", lineHeight: "1.5" };
+      var chevronStyle = { color: "var(--dsw-alias-label-tertiary)", flex: "none", transition: "transform .16s" };
+      var chevronOpenStyle = { transform: "rotate(180deg)" };
+      var bodyStyle = {
+        borderTop: "1px solid var(--dsw-alias-border-l2)",
+        margin: "0 16px",
+        paddingBottom: "8px",
         display: "flex",
         flexDirection: "column",
-        gap: "12px",
-        background: "var(--dsw-alias-bg-l1, transparent)"
+        gap: "12px"
       };
-      var headStyle = { display: "flex", alignItems: "baseline", gap: "8px" };
-      var titleStyle = { fontSize: "15px", fontWeight: 600, color: "var(--dsw-alias-label-primary)" };
-      var subStyle = { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)" };
       var rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" };
       var labelStyle = { fontSize: "13px", color: "var(--dsw-alias-label-primary)" };
       var hintStyle = { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)" };
@@ -657,81 +691,62 @@ window.__ModuleLoader__.load({
         );
       }
 
-      return React.createElement("div", { style: cardStyle, "data-dsh-easyrewrite": "settings-card" },
-        React.createElement("div", { style: headStyle },
-          React.createElement("span", { style: titleStyle }, L.title),
-          React.createElement("span", { style: subStyle }, L.subtitle)
+      return React.createElement("li", { style: Object.assign({}, cardStyle, open ? cardOpenStyle : null), "data-dsh-easyrewrite": "settings-card" },
+        React.createElement("button", {
+          type: "button",
+          style: headStyle,
+          "aria-expanded": open,
+          "aria-label": (open ? L.collapse : L.expand) + ": " + L.title,
+          onClick: function () { setOpen(!open); }
+        },
+          React.createElement("span", { style: headTextStyle },
+            React.createElement("span", { style: titleStyle }, L.title),
+            React.createElement("span", { style: subStyle }, L.subtitle)
+          ),
+          React.createElement("span", { style: Object.assign({}, chevronStyle, open ? chevronOpenStyle : null) }, "▾")
         ),
-        // 气泡框编辑开关 + 二级锁定
-        switchRow(L.rewrite, rewrite, function (v) { setRewrite(v); setBool("dsh-easyrewrite:rewriteOnClick", v); }),
-        switchRow(L.editOffShowRecall, showRecall, function (v) {
-          if (rewrite) return; // 锁定：rewrite 开时不可改
-          setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
-        }, rewrite ? L.lockedHint : null),
-        switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
-        // 视觉模式
-        React.createElement("div", { style: groupStyle },
-          React.createElement("span", { style: labelStyle }, L.visualMode),
-          radioGroup("visualMode", [["simple", L.visualSimple], ["minimal", L.visualMinimal], ["info", L.visualInfo]], visual, function (v) { setVisual(v); setSetting("dsh-easyrewrite:visualMode", v); })
-        ),
-        switchRow(L.statOnlyUser, statOnly, function (v) { setStatOnly(v); setBool("dsh-easyrewrite:statOnlyUser", v); }),
-        // 回填冲突模式
-        React.createElement("div", { style: groupStyle },
-          React.createElement("span", { style: labelStyle }, L.conflictMode),
-          radioGroup("conflictMode", [["overwrite", L.conflictOverwrite], ["merge", L.conflictMerge]], conflict, function (v) { setConflict(v); setSetting("dsh-easyrewrite:conflictMode", v); })
-        ),
-        // 编辑宽度：三固定 + 自定义（固定时输入框禁用置灰）
-        React.createElement("div", { style: groupStyle },
-          React.createElement("span", { style: labelStyle }, L.editWidth),
-          radioGroup("editWidth", [["compact", L.wCompact], ["standard", L.wStandard], ["extended", L.wExtended], ["custom", L.wCustom]], widthMode, function (v) { setWidthMode(v); setSetting("dsh-easyrewrite:editWidth", v); }),
-          React.createElement("div", { style: rowStyle },
-            React.createElement("span", { style: labelStyle }, L.customWidth),
-            React.createElement("input", {
-              type: "number",
-              min: 100,
-              max: 1200,
-              style: widthMode === "custom" ? inputStyle : disabledInputStyle,
-              disabled: widthMode !== "custom",
-              placeholder: L.placeholderCustom,
-              value: customW,
-              onChange: function (e) {
-                setCustomW(e.target.value);
-                setSetting("dsh-easyrewrite:editWidthCustom", e.target.value);
-              }
-            })
-          )
-        ),
-        React.createElement("span", { style: hintStyle }, L.instant)
-      );
-    }
-
-    /** 通用配置入口行（设置 → 通用配置）：点击展开设置表单。 */
-    function EasyRewriteSettingsRow() {
-      var openState = React.useState(false);
-      var open = openState[0];
-      var setOpen = openState[1];
-      var L = SETTINGS_I18N[uiLang()] || SETTINGS_I18N.en;
-      var headStyle = {
-        display: "flex",
-        alignItems: "center",
-        gap: "10px",
-        width: "100%",
-        border: "none",
-        background: "transparent",
-        cursor: "pointer",
-        padding: "8px 4px",
-        textAlign: "left"
-      };
-      var titleStyle = { fontSize: "14px", color: "var(--dsw-alias-label-primary)", flex: "none" };
-      var subStyle = { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", flex: "1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-      var chevronStyle = { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)" };
-      return React.createElement("div", { "data-dsh-easyrewrite": "settings-row" },
-        React.createElement("button", { type: "button", style: headStyle, onClick: function () { setOpen(!open); } },
-          React.createElement("span", { style: titleStyle }, L.title),
-          React.createElement("span", { style: subStyle }, L.subtitle),
-          React.createElement("span", { style: chevronStyle }, open ? "▾" : "▸")
-        ),
-        open ? React.createElement("div", { style: { padding: "4px 0 12px" } }, React.createElement(EasyRewriteSettingsCard, null)) : null
+        open ? React.createElement("div", { style: bodyStyle },
+          // 气泡框编辑开关 + 二级锁定
+          switchRow(L.rewrite, rewrite, function (v) { setRewrite(v); setBool("dsh-easyrewrite:rewriteOnClick", v); }),
+          switchRow(L.editOffShowRecall, showRecall, function (v) {
+            if (rewrite) return; // 锁定：rewrite 开时不可改
+            setShowRecall(v); setBool("dsh-easyrewrite:editOffShowRecall", v);
+          }, rewrite ? L.lockedHint : null),
+          switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
+          // 视觉模式
+          React.createElement("div", { style: groupStyle },
+            React.createElement("span", { style: labelStyle }, L.visualMode),
+            radioGroup("visualMode", [["simple", L.visualSimple], ["minimal", L.visualMinimal], ["info", L.visualInfo]], visual, function (v) { setVisual(v); setSetting("dsh-easyrewrite:visualMode", v); })
+          ),
+          switchRow(L.statOnlyUser, statOnly, function (v) { setStatOnly(v); setBool("dsh-easyrewrite:statOnlyUser", v); }),
+          // 回填冲突模式
+          React.createElement("div", { style: groupStyle },
+            React.createElement("span", { style: labelStyle }, L.conflictMode),
+            radioGroup("conflictMode", [["overwrite", L.conflictOverwrite], ["merge", L.conflictMerge]], conflict, function (v) { setConflict(v); setSetting("dsh-easyrewrite:conflictMode", v); })
+          ),
+          // 编辑宽度：三固定 + 自定义（固定时输入框禁用置灰）
+          React.createElement("div", { style: groupStyle },
+            React.createElement("span", { style: labelStyle }, L.editWidth),
+            radioGroup("editWidth", [["compact", L.wCompact], ["standard", L.wStandard], ["extended", L.wExtended], ["custom", L.wCustom]], widthMode, function (v) { setWidthMode(v); setSetting("dsh-easyrewrite:editWidth", v); }),
+            React.createElement("div", { style: rowStyle },
+              React.createElement("span", { style: labelStyle }, L.customWidth),
+              React.createElement("input", {
+                type: "number",
+                min: 100,
+                max: 1200,
+                style: widthMode === "custom" ? inputStyle : disabledInputStyle,
+                disabled: widthMode !== "custom",
+                placeholder: L.placeholderCustom,
+                value: customW,
+                onChange: function (e) {
+                  setCustomW(e.target.value);
+                  setSetting("dsh-easyrewrite:editWidthCustom", e.target.value);
+                }
+              })
+            )
+          ),
+          React.createElement("span", { style: hintStyle }, L.instant)
+        ) : null
       );
     }
 
@@ -1226,15 +1241,6 @@ window.__ModuleLoader__.load({
           }, EasyRewriteSettingsCard);
         });
         if (typeof d4 === "function") disposers.push(d4);
-        // 通用配置入口行（settings.general.item 为 list 槽，无条件渲染）
-        var d5 = ctx.slots.inject("settings.general.item", function () {
-          return ctx.slots.register({
-            name: "settings.general.item",
-            id: "dsh-easyrewrite",
-            order: 100
-          }, EasyRewriteSettingsRow);
-        });
-        if (typeof d5 === "function") disposers.push(d5);
         return function () {
           for (var i = 0; i < disposers.length; i++) disposers[i]();
           if (styleTag !== null) styleTag.remove();
