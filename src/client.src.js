@@ -1288,12 +1288,8 @@ window.__ModuleLoader__.load({
       var sessionId = props.sessionId;
       // —— hooks 无条件前置（React 规则：任何 return null 不得出现在 hooks 之前，否则 hook 数量漂移 → error #300）——
       var cleanupRef = React.useRef(null);
-      React.useEffect(function () {
-        return function () {
-          // 注意：切换会卸载组件——卸载时绝不能清掉未执行的归档定时器（归档必须在切换后照常执行）
-          if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
-        };
-      }, []);
+      // 注意：没有卸载清理！切换会卸载组件——卸载时绝不能清掉未执行的归档定时器
+      //（归档必须在切换后照常执行；竞态防护只在 goToVersion 内 clear 前一次的）
       // 键盘 ←/→（输入框/可编辑区未聚焦时；实时读家族，避免陈旧闭包）
       React.useEffect(function () {
         function onKey(e) {
