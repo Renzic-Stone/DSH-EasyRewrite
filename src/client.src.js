@@ -146,19 +146,24 @@ window.__ModuleLoader__.load({
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ sessionId: sid, targetSeq: p.targetSeq })
-        }).then(function (resp) { return resp.json(); }).then(function (data) {
+        }).then(function (resp) { return resp.json(); }).then(async function (data) {
           if (!data || !data.ok) {
             var errText = (data && data.error) || "unknown";
             var msg = (data && data.message) || "";
             log("warn", "recall", "撤回失败（发送中止）", { error: errText, message: msg });
-            if (errText === "turn-open") {
-              log("warn", "recall", "提示：请等待当前回复完成（回合结束）后再撤回");
-            }
+            return;
+          }
+          // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题
+          var newId = null;
+          try {
+            newId = await ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
+          } catch (e) {
+            log("error", "recall", "fork 失败（发送中止）", { err: String(e && e.message ? e.message : e) });
             return;
           }
           writePending(sid, null);
-          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + data.newId, JSON.stringify({ draftText: p.draftText })); } catch (e) { /* ignore */ }
-          // 无痕替换：先归档原会话（原对话进归档，新对话顶替），再打开新会话
+          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: p.draftText })); } catch (e) { /* ignore */ }
+          // 2) 无痕替换：归档原会话 → 打开新会话
           var archived = false;
           try {
             if (typeof ctxWorkspaces !== "undefined" && typeof ctxWorkspaces.archiveSession === "function") {
@@ -166,8 +171,8 @@ window.__ModuleLoader__.load({
               archived = true;
             }
           } catch (e) { log("warn", "recall", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
-          log("info", "recall", "撤回完成：归档原会话 + 打开新会话", { newId: data.newId, archived: archived });
-          if (typeof props.openSession === "function") props.openSession(data.newId);
+          log("info", "recall", "撤回完成：归档原会话 + 打开新会话", { newId: newId, archived: archived });
+          if (typeof props.openSession === "function") props.openSession(newId);
         }).catch(function (err) {
           log("error", "recall", "撤回请求失败（发送中止）", { err: String(err && err.message ? err.message : err) });
         });
@@ -579,7 +584,8 @@ window.__ModuleLoader__.load({
             inject: function () {
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
-                ctxWorkspaces: ctx.workspaces
+                ctxWorkspaces: ctx.workspaces,
+                ctxSessions: ctx.sessions
               };
             }
           }, RecallBanner);
