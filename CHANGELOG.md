@@ -2,6 +2,24 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] — review 安全与正确性修复
+
+### Security（独立代码审查 S1-S3）
+- 会话 id 白名单校验（`/^[A-Za-z0-9-]+$/`，防备份路由路径穿越）
+- 全部 host 路由同源守卫（Origin/Referer 与 Host 匹配）+ 强制 JSON Content-Type（防 CSRF）
+- archive/unarchive 增加 `sessionKnown` 存在性校验（防污染归档集合）
+- recall 500 错误响应脱敏（不回传内部错误消息）
+- 请求体超限改 413 语义（不再连接重置）
+
+### Correctness（M1-M11）
+- 发送钩子不再劫持「停止生成」按钮；撤回/编辑重发加 in-flight 并发锁（防重复 fork）
+- 编辑重发失败恢复编辑态（草稿不丢）；edit/recall pending 交叉互斥
+- resume-send 30s TTL（防陈旧草稿幽灵自动发送）；归档 await + catch
+- 备份恢复 24h 新鲜度校验（防幽灵恢复）；跨标签页 storage 同步
+- 首回合已闭合误报 turn-open → 修正为 no-boundary；编辑带附件消息显示不保留警告
+- 渲染期日志清理（VersionPager shown/一次性诊断）；日志去内容化（不落明文）
+- 死代码清理（isOpenTurnError/visualHide/__dshBubbleEditDebug）；自定义宽度钳制 1200px
+
 ## [1.0.0] — 首个稳定版
 
 1.0 标志着 M1（撤回）/ M2（内联编辑）/ M3（设置页、版本翻页器、快捷键）全部完成并通过用户验收；v0.4.0 之后的内容见下方 Unreleased 历史条目，均已随 1.0.0 发布。
