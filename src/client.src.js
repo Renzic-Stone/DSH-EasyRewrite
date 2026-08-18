@@ -13,13 +13,18 @@ window.__ModuleLoader__.load({
 
     var NS = "dsh-easyrewrite";
 
-    /** 统一日志：console 输出 + 上报 host 落盘（$DSH_HOME/dsh-easyrewrite.log）。 */
+    /** 统一日志：默认静默（仅上报 host 落盘）；调试模式（localStorage dsh-easyrewrite:debug=1）时打印控制台。 */
+    function debugEnabled() {
+      try { return localStorage.getItem("dsh-easyrewrite:debug") === "1"; } catch (e) { return false; }
+    }
     function log(level, tag, message, data) {
       try {
-        var prefix = "[dsh-easyrewrite][" + level + "] " + (tag ? "[" + tag + "] " : "");
-        if (level === "error") console.error(prefix + message, data !== undefined ? data : "");
-        else if (level === "warn") console.warn(prefix + message, data !== undefined ? data : "");
-        else console.info(prefix + message, data !== undefined ? data : "");
+        if (debugEnabled()) {
+          var prefix = "[dsh-easyrewrite][" + level + "] " + (tag ? "[" + tag + "] " : "");
+          if (level === "error") console.error(prefix + message, data !== undefined ? data : "");
+          else if (level === "warn") console.warn(prefix + message, data !== undefined ? data : "");
+          else console.info(prefix + message, data !== undefined ? data : "");
+        }
         try {
           fetch("/bubble/log", {
             method: "POST",
