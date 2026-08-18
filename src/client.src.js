@@ -841,7 +841,14 @@ window.__ModuleLoader__.load({
           return ctx.slots.register({
             name: "conversation.chat.node",
             key: "user",
-            priority: -1
+            priority: -1,
+            inject: function () {
+              return {
+                openSession: function (id) { ctx.sessions.open(id); },
+                ctxWorkspaces: ctx.workspaces,
+                ctxSessions: ctx.sessions
+              };
+            }
           }, UserBubbleView);
         });
         if (typeof d === "function") disposers.push(d);
