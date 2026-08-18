@@ -886,6 +886,15 @@ window.__ModuleLoader__.load({
         // 历史版本都是归档会话（无痕替换副作用），先恢复再打开；恢复失败也照常打开（幂等）
         var doOpen = function () {
           if (typeof props.openSession === "function") props.openSession(next);
+          // 等 open 生效后，归档家族其他版本（保持列表只有一个活动版本；排除当前会话防误归档）
+          setTimeout(function () {
+            try {
+              if (typeof props.archiveSession !== "function") return;
+              family.versions.forEach(function (vid) {
+                if (vid !== next && vid !== sessionId) props.archiveSession(vid);
+              });
+            } catch (e) { /* ignore */ }
+          }, 300);
           restoreScrollAnchor(anchor);
         };
         if (typeof props.restoreSession === "function") {
@@ -1453,6 +1462,9 @@ window.__ModuleLoader__.load({
             inject: function () {
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
+                archiveSession: function (id) {
+                  try { return ctx.workspaces.archiveSession(id); } catch (e) { return Promise.resolve(); }
+                },
                 restoreSession: function (id) {
                   return fetch("/bubble/unarchive", {
                     method: "POST",
