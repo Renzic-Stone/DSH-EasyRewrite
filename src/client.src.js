@@ -956,24 +956,24 @@ window.__ModuleLoader__.load({
       };
       var disabledInputStyle = Object.assign({}, inputStyle, { opacity: 0.45, cursor: "not-allowed" });
       function switchRow(label, value, onChange, extraHint) {
-        // 圆形勾选框（Apple 风格）：选中 = 主题色圆底 + 白色 ✓；未选中 = 灰色圆环
+        // 圆形勾选框（Apple 风格）：选中 = 主题色圆环 + 主题色 ✓（无底色，深浅主题均可见）；未选中 = 灰色圆环
         var checkSize = 20;
         var checkStyle = {
           width: checkSize,
           height: checkSize,
           borderRadius: "50%",
           border: "2px solid " + (value ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-border-l2, rgba(128,128,128,0.45))"),
-          background: value ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "transparent",
+          background: "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: "#ffffff",
+          color: value ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "transparent",
           fontSize: "13px",
           lineHeight: "13px",
           cursor: "pointer",
           flex: "none",
           margin: "0 2px",
-          transition: "background .15s, border-color .15s",
+          transition: "border-color .15s, color .15s",
           userSelect: "none",
           boxSizing: "border-box"
         };
