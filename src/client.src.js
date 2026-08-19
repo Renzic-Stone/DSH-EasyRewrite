@@ -1476,9 +1476,17 @@ window.__ModuleLoader__.load({
         // 场景 1：全新会话首条 → 归档即回空白新对话（无家族分支与父版本分支共用）
       } catch (e) { /* ignore */ }
       // 归档当前会话（两种场景都需要；project() 检测 current 归档 → 自动回 hero/父版本打开后列表更新）
+      // 能力探测：RecallBanner 等槽的 inject 面只有 ctxWorkspaces（无 archiveSession）
       try {
-        if (typeof props.archiveSession === "function") {
-          Promise.resolve(props.archiveSession(sessionId)).catch(function () { /* ignore */ });
+        var archiver = typeof props.archiveSession === "function"
+          ? props.archiveSession
+          : (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function"
+            ? function (id) { return props.ctxWorkspaces.archiveSession(id); }
+            : null);
+        if (archiver) {
+          Promise.resolve(archiver(sessionId)).catch(function () { log("warn", "reset", "归档失败", { sessionId: sessionId }); });
+        } else {
+          log("warn", "reset", "归档能力不可用", { sessionId: sessionId });
         }
       } catch (e) { /* ignore */ }
     }
