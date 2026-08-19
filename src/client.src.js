@@ -967,7 +967,13 @@ window.__ModuleLoader__.load({
           return function () {};
         },
         function () {
-          try { return localeServiceRef ? localeServiceRef.snapshot.active : "zh"; } catch (e) { return "zh"; }
+          try {
+            if (localeServiceRef && typeof localeServiceRef.getSnapshot === "function") {
+              var snap = localeServiceRef.getSnapshot();
+              return snap && typeof snap.active === "string" ? snap.active : "zh";
+            }
+            return "zh";
+          } catch (e) { return "zh"; }
         }
       );
       return SETTINGS_I18N[active] || SETTINGS_I18N.zh;
@@ -2098,6 +2104,6 @@ window.__ModuleLoader__.load({
       }, "dsh-easyrewrite: UserBubbleView overlay");
     }
 
-    return { name: "dsh-easyrewrite", inject: ["slots", "sessions", "workspaces", "conversation"], apply: apply };
+    return { name: "dsh-easyrewrite", inject: ["slots", "sessions", "workspaces", "conversation", "locale"], apply: apply };
   }
 });

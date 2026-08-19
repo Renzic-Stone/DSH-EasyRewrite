@@ -12,6 +12,12 @@
 - 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
 - 全组件 hooks 顺序扫描确认无同类隐患
 
+## [1.2.1] — 修复 i18n 未生效（inject 缺 locale 服务）
+
+- 1.2.0 的官方 locale 接入失效根因：client inject 数组缺少 `locale` 服务——`ctx.locale` 为 undefined，字典永远回退中文
+- 修复：inject 增加 `locale`；`useUILocaleDict` 改用官方 face 的 `getSnapshot()` 方法读取当前语言（`snapshot` 属性不暴露在注入面）
+- 现在跟随官方「通用设置 → 语言」切换，即时生效
+
 ## [1.2.0] — 官方 i18n 支持（三语全覆盖）
 
 - **接入官方 locale 机制**（dsh-client-locale）：注册 zh/en/ja 字典，跟随官方语言设置，切换语言即时生效（useSyncExternalStore 驱动组件重渲染）
