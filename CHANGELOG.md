@@ -12,6 +12,13 @@
 - 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
 - 全组件 hooks 顺序扫描确认无同类隐患
 
+## [1.2.2] — 可发现性优化（三语门面 + 多语言标签）
+
+- npm/GitHub description 三语（中/英/日）——英文关键词提升国际检索命中（recall/undo/edit）
+- package.json keywords 扩充（含 undo/rollback/撤回/バブル編集 等中英日标签）
+- README 三语顶部标签行（#撤回 #气泡编辑 #取り消し #多言語 等）
+- GitHub topics 保持英文（平台限制不支持中文标签）
+
 ## [1.2.1] — 修复 i18n 未生效（inject 缺 locale 服务）
 
 - 1.2.0 的官方 locale 接入失效根因：client inject 数组缺少 `locale` 服务——`ctx.locale` 为 undefined，字典永远回退中文
