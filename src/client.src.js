@@ -1457,26 +1457,7 @@ window.__ModuleLoader__.load({
     function resetConversation(sessionId, mode, text, props) {
       log("info", "reset", "首条消息重置对话", { sessionId: sessionId, mode: mode });
       writePending(sessionId, null);
-      try {
-        var fam = familyOfSession(sessionId);
-        var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
-        if (parentId) {
-          // 场景 2：截断/分叉会话 → 回到父版本（上一次模型回复）
-          if (mode === "edit" && typeof text === "string") {
-            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now() })); } catch (e) { /* ignore */ }
-          }
-          var doOpenParent = function () {
-            if (typeof props.openSession === "function") props.openSession(parentId);
-          };
-          if (typeof props.restoreSession === "function") {
-            try { props.restoreSession(parentId).then(doOpenParent, doOpenParent); return; } catch (e) { /* fallthrough */ }
-          }
-          doOpenParent();
-        }
-        // 场景 1：全新会话首条 → 归档即回空白新对话（无家族分支与父版本分支共用）
-      } catch (e) { /* ignore */ }
-      // 归档当前会话（两种场景都需要；project() 检测 current 归档 → 自动回 hero/父版本打开后列表更新）
-      // 能力探测：RecallBanner 等槽的 inject 面只有 ctxWorkspaces（无 archiveSession）
+      // 1) 归档当前会话（两种场景都需要；project() 检测 current 归档 → 自动回 hero/父版本打开后列表更新）
       try {
         var archiver = typeof props.archiveSession === "function"
           ? props.archiveSession
@@ -1489,6 +1470,52 @@ window.__ModuleLoader__.load({
           log("warn", "reset", "归档能力不可用", { sessionId: sessionId });
         }
       } catch (e) { /* ignore */ }
+      // 2) 场景 2：家族父版本（截断/分叉会话 → 回到上一次模型回复）
+      try {
+        var fam = familyOfSession(sessionId);
+        var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
+        if (parentId) {
+          if (mode === "edit" && typeof text === "string") {
+            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now() })); } catch (e) { /* ignore */ }
+          }
+          var doOpenParent = function () {
+            if (typeof props.openSession === "function") props.openSession(parentId);
+          };
+          if (typeof props.restoreSession === "function") {
+            try { props.restoreSession(parentId).then(doOpenParent, doOpenParent); return; } catch (e) { /* fallthrough */ }
+          }
+          doOpenParent();
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      // 3) 场景 1：全新会话首条 → 无缝打开空白新会话（编辑模式经 resume 自动发送编辑文本）
+      try {
+        var wsId = null;
+        if (props.ctxWorkspaces && typeof props.ctxWorkspaces.list === "object" && typeof props.ctxWorkspaces.list.getSnapshot === "function") {
+          var wsList = props.ctxWorkspaces.list.getSnapshot();
+          if (wsList && Array.isArray(wsList.items)) {
+            for (var wi = 0; wi < wsList.items.length; wi++) {
+              if (wsList.items[wi] && Array.isArray(wsList.items[wi].sessionIds) && wsList.items[wi].sessionIds.indexOf(sessionId) >= 0) {
+                wsId = wsList.items[wi].workspaceId;
+                break;
+              }
+            }
+          }
+        }
+        if (wsId && props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") {
+          props.ctxWorkspaces.connectWorkspace(wsId).then(function (newId) {
+            if (!newId) return;
+            if (mode === "edit" && typeof text === "string") {
+              try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now() })); } catch (e) { /* ignore */ }
+            }
+            log("info", "reset", "空白新会话已就绪", { newId: newId, mode: mode });
+            if (typeof props.openSession === "function") props.openSession(newId);
+          }).catch(function () { log("warn", "reset", "空白会话创建失败（回 hero）"); });
+          return;
+        }
+      } catch (e) { /* ignore */ }
+      // 兜底：归档已生效，官方自动回 hero
+      log("info", "reset", "重置完成（兜底路径）", { sessionId: sessionId, mode: mode });
     }
 
     /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
