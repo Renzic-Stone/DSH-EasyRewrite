@@ -36,7 +36,14 @@
     "ui",
     "edit",
     "recall",
-    "rewrite"
+    "rewrite",
+    "bubble-edit",
+    "version-pager",
+    "i18n",
+    "internationalization",
+    "multilingual",
+    "localization",
+    "plugin"
   ],
   "license": "MIT",
   "scripts": {
