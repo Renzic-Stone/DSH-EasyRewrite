@@ -537,9 +537,15 @@ window.__ModuleLoader__.load({
           });
           var data = await resp.json();
           if (!data || !data.ok) {
-            log("warn", "recall", "撤回失败（发送中止）", { error: (data && data.error) || "unknown" });
-            // 可见提示：在输入区上方插入临时错误条（3.5s 后自动移除）
-            showRecallError(data && data.error === "no-boundary" ? L.errNoBoundary : (data && data.error === "turn-open" ? L.errTurnOpen : L.errGeneric));
+            var errCode = (data && data.error) || "unknown";
+            log("warn", "recall", "撤回失败（发送中止）", { error: errCode });
+            if (errCode === "turn-open" || errCode === "no-boundary") {
+              // 极限场景（说一半截断 / 首条无边界）：删半截对话，从上次模型回复重新开始（家族）或空白顶替
+              showRecallError(L.resetNotice);
+              resetConversation(sid, "recall", null, props);
+            } else {
+              showRecallError(L.errGeneric);
+            }
             return;
           }
           // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题
@@ -841,6 +847,7 @@ window.__ModuleLoader__.load({
         errNoBoundary: "该消息之前没有可截断的闭合回合边界（截断/首条消息无法撤回或编辑）",
         errTurnOpen: "该消息所在回合尚未结束，请等待回复完成后再操作",
         errGeneric: "操作失败，请重试",
+        resetNotice: "对话处于半截状态，已重置——正在回到上一次模型回复处（或空白新对话）",
         sectionEdit: "编辑",
         sectionRecall: "撤回",
         sectionComposer: "回填",
@@ -904,6 +911,7 @@ window.__ModuleLoader__.load({
         errNoBoundary: "No truncation boundary before this message (first/truncated message cannot be recalled or edited)",
         errTurnOpen: "This message's turn is still running; wait for the reply to finish",
         errGeneric: "Operation failed, please retry",
+        resetNotice: "The conversation was in a truncated state and has been reset — returning to the last model reply (or a blank conversation)",
         sectionEdit: "Editing",
         sectionRecall: "Recall",
         sectionComposer: "Composer fill",
@@ -967,6 +975,7 @@ window.__ModuleLoader__.load({
         errNoBoundary: "このメッセージの前に切り詰め境界がありません（切り詰め後・最初のメッセージは撤回/編集できません）",
         errTurnOpen: "このメッセージのターンはまだ終了していません。返信完了後にお試しください",
         errGeneric: "操作に失敗しました。もう一度お試しください",
+        resetNotice: "会話が途中で切れた状態のためリセットしました——最後のモデル返信（または空白の会話）に戻ります",
         sectionEdit: "編集",
         sectionRecall: "撤回",
         sectionComposer: "入力欄",
@@ -1822,11 +1831,20 @@ window.__ModuleLoader__.load({
           });
           var data = await resp.json();
           if (!data || !data.ok) {
-            log("warn", "edit", "编辑重发失败（边界）", { error: data && data.error });
-            // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容；显示可见原因
-            setEditing(true);
-            setOpError(data && data.error === "no-boundary" ? L.errNoBoundary : (data && data.error === "turn-open" ? L.errTurnOpen : L.errGeneric));
-            setTimeout(function () { setOpError(null); }, 5000);
+            var errCode2 = (data && data.error) || "unknown";
+            log("warn", "edit", "编辑重发失败（边界）", { error: errCode2 });
+            if (errCode2 === "turn-open" || errCode2 === "no-boundary") {
+              // 极限场景（说一半截断 / 首条无边界）：重置对话，编辑文本带到新起点
+              setEditing(false);
+              setOpError(L.resetNotice);
+              setTimeout(function () { setOpError(null); }, 5000);
+              resetConversation(sid, "edit", newText, props);
+            } else {
+              // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容；显示可见原因
+              setEditing(true);
+              setOpError(L.errGeneric);
+              setTimeout(function () { setOpError(null); }, 5000);
+            }
             return;
           }
           var newId = null;
