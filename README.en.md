@@ -2,6 +2,8 @@
 
 [中文](README.md) | [日本語](README.ja.md)
 
+`#dsh` `#deepseek-harness` `#recall` `#rewrite` `#bubble-edit` `#version-pager` `#i18n` `#multilingual`
+
 **Inline-edit & recall your own user messages in the DeepSeek Harness Web UI — lazily, seamlessly, and without ever losing your work.**
 
 Click your own message bubble to edit it in place; hit the recall button beside copy to withdraw it and everything after it. Nothing is ever really changed until you commit — the conversation, the model context, and the session log stay untouched until you press **Confirm** (rewrite) or **Send** (recall).

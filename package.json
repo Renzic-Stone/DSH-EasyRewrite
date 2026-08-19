@@ -1,7 +1,7 @@
 {
   "name": "dsh-easyrewrite",
   "version": "1.2.1",
-  "description": "DSH Web 用户消息气泡内联编辑（rewrite）与撤回插件：点击气泡原位编辑、行内确认胶囊撤回、惰性提交、< X > 版本翻页器。",
+  "description": "Bubble edit & recall for DSH Web — inline edit, undo/recall with version pager. 气泡内联编辑与撤回插件。DSH Web のバブル編集・撤回プラグイン。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -34,16 +34,27 @@
     "deepseek-harness",
     "client-plugin",
     "ui",
+    "plugin",
     "edit",
-    "recall",
     "rewrite",
     "bubble-edit",
+    "recall",
+    "undo",
+    "rollback",
     "version-pager",
+    "撤回",
+    "气泡编辑",
+    "重编辑",
+    "取り消し",
+    "バブル編集",
+    "編集",
     "i18n",
     "internationalization",
     "multilingual",
     "localization",
-    "plugin"
+    "zh",
+    "en",
+    "ja"
   ],
   "license": "MIT",
   "scripts": {
