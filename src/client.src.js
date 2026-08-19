@@ -517,7 +517,7 @@ window.__ModuleLoader__.load({
         try {
           var sid = props.sessionId;
           // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork）
-          if (isFirstUserMessage()) {
+          if (isFirstUserMessage(props, myKey)) {
             recallInFlight = false;
             resetConversation(sid, "recall", null, props);
             return;
@@ -1431,6 +1431,21 @@ window.__ModuleLoader__.load({
       doOpen();
     }
 
+    /** 该消息是否为会话第一条 user 消息（首条/截断会话首条无前置闭合边界）——模块级，UserBubbleView 与 RecallBanner 共用 */
+    function isFirstUserMessage(props, myKey) {
+      try {
+        var snap = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
+        if (snap && snap.chat && Array.isArray(snap.chat.order) && snap.chat.nodes && typeof snap.chat.nodes.get === "function") {
+          var ord = snap.chat.order;
+          for (var oi = 0; oi < ord.length; oi++) {
+            var on = snap.chat.nodes.get(ord[oi]);
+            if (on && on.kind === "user") return on.key === myKey;
+          }
+        }
+      } catch (e) { /* ignore */ }
+      return false;
+    }
+
     /** 极限场景重置（首条消息/截断会话首条，无前置闭合边界，无法 fork）：
      * - 家族会话（截断/分叉产物，版本 ≥2）：归档当前 → 恢复并打开**父版本**（上一次模型回复处）重新开始；
      *   编辑模式经 resume 机制把修改文本带到父版本自动重发。
@@ -1667,20 +1682,6 @@ window.__ModuleLoader__.load({
         }
       }, [isEditPending]);
 
-      // 极限场景预检：该消息是否为会话第一条 user 消息（首条/截断会话无前置闭合边界）
-      function isFirstUserMessage() {
-        try {
-          var snap = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
-          if (snap && snap.chat && Array.isArray(snap.chat.order) && snap.chat.nodes && typeof snap.chat.nodes.get === "function") {
-            var ord = snap.chat.order;
-            for (var oi = 0; oi < ord.length; oi++) {
-              var on = snap.chat.nodes.get(ord[oi]);
-              if (on && on.kind === "user") return on.key === myKey;
-            }
-          }
-        } catch (e) { /* ignore */ }
-        return false;
-      }
       // 统计该消息之后的内容条数（x 条内容）——防御式读取：任何异常都不影响气泡渲染
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
       var afterCount = 0;
@@ -1799,7 +1800,7 @@ window.__ModuleLoader__.load({
           var sid = sessionId;
           var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
           // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork；编辑文本带到新起点）
-          if (isFirstUserMessage()) {
+          if (isFirstUserMessage(props, myKey)) {
             setEditing(false);
             resetConversation(sid, "edit", newText, props);
             return;
@@ -2030,7 +2031,7 @@ window.__ModuleLoader__.load({
                       return;
                     }
                     // 极限场景：首条消息（含截断会话）——确认后按场景重置（家族→回父版本；无家族→空白顶替）
-                    if (isFirstUserMessage()) {
+                    if (isFirstUserMessage(props, myKey)) {
                       setConfirming(true);
                       return;
                     }
