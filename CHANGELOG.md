@@ -2,6 +2,11 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] — 紧急修复：i18n 改造引入的 hooks 顺序回归
+
+- **VersionPager 崩溃（React #300）**：i18n 改造把 `useUILocaleDict()`（hook）放在了两个 `return null` 之后——家族版本 <2 或非最后回合的渲染路径 hooks 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃 → `< X >` 占位不显示
+- 修复：L hook 无条件前置到 hooks 区首位；全组件 hooks 顺序扫描确认无同类问题
+
 ## [1.2.2] — 可发现性优化（三语门面 + 多语言标签）
 
 - **修复了一些已知的可能影响用户体验的问题**（i18n 语言切换、附件保留、并发与归档竞态等历次修复均随本版及此前版本发布）
