@@ -2,17 +2,9 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [1.0.3] — 修复重复对话（归档交换回归）
-
-- **移除 1.0.2 重构误加的卸载清理**：切换 = 组件卸载 → 卸载 effect 清掉归档轮询定时器 → 归档交换失效 → 工作区重复对话。该 bug 曾在 98fcb62 修复，1.0.2 重构时被重新引入，现已删除（竞态防护保留在 goToVersion 内）
-
-## [1.0.2] — 修复 React error #300（hooks 顺序）
-
-- **VersionPager hooks 无条件前置**：此前家族版本 <2 或非最后回合时在 `useRef`/`useEffect` 之前 return null，同一组件实例后续渲染 hook 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃（部分情况 `< X >` 不显示）
-- 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
-- 全组件 hooks 顺序扫描确认无同类隐患
-
 ## [1.2.2] — 可发现性优化（三语门面 + 多语言标签）
+
+- **修复了一些已知的可能影响用户体验的问题**（i18n 语言切换、附件保留、并发与归档竞态等历次修复均随本版及此前版本发布）
 
 - npm/GitHub description 三语（中/英/日）——英文关键词提升国际检索命中（recall/undo/edit）
 - package.json keywords 扩充（含 undo/rollback/撤回/バブル編集 等中英日标签）
@@ -37,6 +29,16 @@
 - 附件引用随 resume 数据传递（30s TTL 内重建），新会话挂载时异步重建完成后才发送
 - 警告细分：图片附件不再警告（可保留）；仅非图片/未知块才提示「无法保留」
 - 撤回场景不变（仅回填文本，附件不回填）
+
+## [1.0.3] — 修复重复对话（归档交换回归）
+
+- **移除 1.0.2 重构误加的卸载清理**：切换 = 组件卸载 → 卸载 effect 清掉归档轮询定时器 → 归档交换失效 → 工作区重复对话。该 bug 曾在 98fcb62 修复，1.0.2 重构时被重新引入，现已删除（竞态防护保留在 goToVersion 内）
+
+## [1.0.2] — 修复 React error #300（hooks 顺序）
+
+- **VersionPager hooks 无条件前置**：此前家族版本 <2 或非最后回合时在 `useRef`/`useEffect` 之前 return null，同一组件实例后续渲染 hook 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃（部分情况 `< X >` 不显示）
+- 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
+- 全组件 hooks 顺序扫描确认无同类隐患
 
 ## [1.0.1] — review 安全与正确性修复
 
