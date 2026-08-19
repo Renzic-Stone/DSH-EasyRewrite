@@ -98,7 +98,7 @@ dsh plugin --profile web add github:Renzic-Stone/DSH-EasyRewrite
 
 - 本帖评论区（可随时反馈）
 - GitHub Issues / PR：https://github.com/Renzic-Stone/DSH-EasyRewrite
-- npm：`dsh-easyrewrite`（最新 v1.2.0）
+- npm：`dsh-easyrewrite`（最新 v1.2.1）
 - 已收录：awesome-dsh-plugin 列表（session 分类）
 
 有 bug、有想法，欢迎去 GitHub 开 issue——每个反馈都会被看到。
