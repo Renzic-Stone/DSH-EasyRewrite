@@ -6,6 +6,7 @@
 
 - **VersionPager 崩溃（React #300）**：i18n 改造把 `useUILocaleDict()`（hook）放在了两个 `return null` 之后——家族版本 <2 或非最后回合的渲染路径 hooks 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃 → `< X >` 占位不显示
 - 修复：L hook 无条件前置到 hooks 区首位；全组件 hooks 顺序扫描确认无同类问题
+- **CopyButton 崩溃（ReferenceError: L is not defined）**：i18n 改造给 CopyButton 的 `useUILocaleDict()` 声明未写入（edit 部分生效）→ 复制键渲染时引用未定义 L → `conversation.chat.node` 槽崩溃 → **撤回键 / 气泡编辑整体消失**（fallback 官方渲染器）；已补声明并全组件核对 L 声明完整性
 
 ## [1.2.2] — 可发现性优化（三语门面 + 多语言标签）
 
