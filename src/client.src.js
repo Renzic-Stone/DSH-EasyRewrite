@@ -516,6 +516,12 @@ window.__ModuleLoader__.load({
         recallInFlight = true;
         try {
           var sid = props.sessionId;
+          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork）
+          if (isFirstUserMessage()) {
+            recallInFlight = false;
+            resetConversation(sid, "recall", null, props);
+            return;
+          }
           // 读取输入框当前文本（用户可能已修改）：resume 发送的是修改后的内容
           var sendText = p.draftText;
           try {
@@ -1416,6 +1422,43 @@ window.__ModuleLoader__.load({
       doOpen();
     }
 
+    /** 极限场景重置（首条消息/截断会话首条，无前置闭合边界，无法 fork）：
+     * - 家族会话（截断/分叉产物，版本 ≥2）：归档当前 → 恢复并打开**父版本**（上一次模型回复处）重新开始；
+     *   编辑模式经 resume 机制把修改文本带到父版本自动重发。
+     * - 全新会话首条（无家族）：归档当前 → 回到空白新对话（官方 project() 检测归档即回 hero）。
+     * @param mode - "recall" | "edit"
+     * @param text - edit 模式的修改后文本
+     * @param props - 组件 inject 面
+     */
+    function resetConversation(sessionId, mode, text, props) {
+      log("info", "reset", "首条消息重置对话", { sessionId: sessionId, mode: mode });
+      writePending(sessionId, null);
+      try {
+        var fam = familyOfSession(sessionId);
+        var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
+        if (parentId) {
+          // 场景 2：截断/分叉会话 → 回到父版本（上一次模型回复）
+          if (mode === "edit" && typeof text === "string") {
+            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now() })); } catch (e) { /* ignore */ }
+          }
+          var doOpenParent = function () {
+            if (typeof props.openSession === "function") props.openSession(parentId);
+          };
+          if (typeof props.restoreSession === "function") {
+            try { props.restoreSession(parentId).then(doOpenParent, doOpenParent); return; } catch (e) { /* fallthrough */ }
+          }
+          doOpenParent();
+        }
+        // 场景 1：全新会话首条 → 归档即回空白新对话（无家族分支与父版本分支共用）
+      } catch (e) { /* ignore */ }
+      // 归档当前会话（两种场景都需要；project() 检测 current 归档 → 自动回 hero/父版本打开后列表更新）
+      try {
+        if (typeof props.archiveSession === "function") {
+          Promise.resolve(props.archiveSession(sessionId)).catch(function () { /* ignore */ });
+        }
+      } catch (e) { /* ignore */ }
+    }
+
     /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
      * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 或键盘 ←/→
      * 切换版本（sessions.open 兄弟会话），切换后滚动锚定保持文本位置不动。 */
@@ -1725,13 +1768,6 @@ window.__ModuleLoader__.load({
       // ---------- 编辑态（气泡 rewrite） ----------
       function enterEdit(initWidth) {
         if (pending) { log("warn", "edit", "已有待处理操作（单待定约束），请先处理"); return; }
-        // 极限场景预检：会话第一条 user 消息无前置闭合边界（含截断会话），直接提示不发请求
-        if (isFirstUserMessage()) {
-          setOpError(L.errNoBoundary);
-          setTimeout(function () { setOpError(null); }, 5000);
-          log("warn", "edit", "首条消息不可编辑（无前置边界）");
-          return;
-        }
         var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
         writePending(sessionId, { type: "edit", targetKey: myKey, targetSeq: realSeq, draftText: text, updatedAt: Date.now() });
         if (initWidth && initWidth > 0) bubbleInitState[1](initWidth);
@@ -1753,6 +1789,12 @@ window.__ModuleLoader__.load({
           var newText = editText;
           var sid = sessionId;
           var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
+          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork；编辑文本带到新起点）
+          if (isFirstUserMessage()) {
+            setEditing(false);
+            resetConversation(sid, "edit", newText, props);
+            return;
+          }
           // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
           // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
           var attachRefs = [];
@@ -1902,14 +1944,7 @@ window.__ModuleLoader__.load({
             "div", { style: actionsStyle },
             actionButton("撤回", "撤回", function (e) {
               e.stopPropagation();
-              // 极限场景预检：首条消息（含截断会话）无前置边界，直接提示
-              if (isFirstUserMessage()) {
-                setOpError(L.errNoBoundary);
-                setTimeout(function () { setOpError(null); }, 5000);
-                log("warn", "recall", "首条消息不可撤回（无前置边界）");
-                return;
-              }
-              // 编辑态直接转撤回：丢弃编辑草稿 → 确认胶囊
+              // 编辑态直接转撤回：丢弃编辑草稿 → 确认胶囊（首条消息同样走确认，确定后重置对话）
               if (isEditPending) writePending(sessionId, null);
               setEditing(false);
               setConfirming(true);
@@ -1976,11 +2011,9 @@ window.__ModuleLoader__.load({
                       log("warn", "recall", "已有待处理撤回（单待定约束）");
                       return;
                     }
-                    // 极限场景预检：首条消息（含截断会话）无前置边界，直接提示
+                    // 极限场景：首条消息（含截断会话）——确认后按场景重置（家族→回父版本；无家族→空白顶替）
                     if (isFirstUserMessage()) {
-                      setOpError(L.errNoBoundary);
-                      setTimeout(function () { setOpError(null); }, 5000);
-                      log("warn", "recall", "首条消息不可撤回（无前置边界）");
+                      setConfirming(true);
                       return;
                     }
                     // review M5：存在编辑待定 → 丢弃编辑草稿转撤回（与编辑态操作区撤回键同语义）
