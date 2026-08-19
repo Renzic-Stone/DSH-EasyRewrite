@@ -497,6 +497,19 @@ window.__ModuleLoader__.load({
         var al = (btn.getAttribute("aria-label") || "").toLowerCase();
         return al.indexOf("停止") !== -1 || al.indexOf("stop") !== -1;
       }
+      // 撤回发送失败的可见提示：输入滚动区上方插入临时错误条（3.5s 自动移除）
+      function showRecallError(text) {
+        try {
+          var scrollEl = document.querySelector("[data-input-scroll]");
+          if (!scrollEl || !scrollEl.parentNode) return;
+          var bar = document.createElement("div");
+          bar.setAttribute("data-dsh-easyrewrite", "recall-error");
+          bar.textContent = text;
+          bar.style.cssText = "margin:0 16px;padding:4px 10px;font-size:12px;line-height:1.5;color:var(--dsw-alias-label-error,#d9534f);background:var(--dsw-alias-bg-l2,rgba(128,128,128,0.08));border-radius:8px;";
+          scrollEl.parentNode.insertBefore(bar, scrollEl);
+          setTimeout(function () { try { if (bar.parentNode) bar.parentNode.removeChild(bar); } catch (e) { /* ignore */ } }, 3500);
+        } catch (e) { /* ignore */ }
+      }
       var recallInFlight = false; // review M2：in-flight 锁，防 Enter/按钮并发重复 fork
       async function doRecallThenSend(p) {
         if (recallInFlight) return;
@@ -519,6 +532,8 @@ window.__ModuleLoader__.load({
           var data = await resp.json();
           if (!data || !data.ok) {
             log("warn", "recall", "撤回失败（发送中止）", { error: (data && data.error) || "unknown" });
+            // 可见提示：在输入区上方插入临时错误条（3.5s 后自动移除）
+            showRecallError(data && data.error === "no-boundary" ? L.errNoBoundary : (data && data.error === "turn-open" ? L.errTurnOpen : L.errGeneric));
             return;
           }
           // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题
@@ -817,6 +832,9 @@ window.__ModuleLoader__.load({
         recallTextQ: "撤回这条消息及其后 {n} 条提问？",
         recallTextC: "撤回这条消息及其后 {n} 条内容？",
         cancelRecall: "取消撤回",
+        errNoBoundary: "该消息之前没有可截断的闭合回合边界（截断/首条消息无法撤回或编辑）",
+        errTurnOpen: "该消息所在回合尚未结束，请等待回复完成后再操作",
+        errGeneric: "操作失败，请重试",
         sectionEdit: "编辑",
         sectionRecall: "撤回",
         sectionComposer: "回填",
@@ -877,6 +895,9 @@ window.__ModuleLoader__.load({
         recallTextQ: "Recall this message and {n} following questions?",
         recallTextC: "Recall this message and {n} following items?",
         cancelRecall: "Cancel recall",
+        errNoBoundary: "No truncation boundary before this message (first/truncated message cannot be recalled or edited)",
+        errTurnOpen: "This message's turn is still running; wait for the reply to finish",
+        errGeneric: "Operation failed, please retry",
         sectionEdit: "Editing",
         sectionRecall: "Recall",
         sectionComposer: "Composer fill",
@@ -937,6 +958,9 @@ window.__ModuleLoader__.load({
         recallTextQ: "このメッセージと後続 {n} 件の質問を撤回しますか？",
         recallTextC: "このメッセージと後続 {n} 件を撤回しますか？",
         cancelRecall: "撤回をキャンセル",
+        errNoBoundary: "このメッセージの前に切り詰め境界がありません（切り詰め後・最初のメッセージは撤回/編集できません）",
+        errTurnOpen: "このメッセージのターンはまだ終了していません。返信完了後にお試しください",
+        errGeneric: "操作に失敗しました。もう一度お試しください",
         sectionEdit: "編集",
         sectionRecall: "撤回",
         sectionComposer: "入力欄",
@@ -1577,6 +1601,10 @@ window.__ModuleLoader__.load({
       var editTextState = React.useState("");
       var editText = editTextState[0];
       var setEditText = editTextState[1];
+      // 可见错误提示（no-boundary / turn-open 等失败原因）
+      var errState = React.useState(null);
+      var opError = errState[0];
+      var setOpError = errState[1];
       var bubbleInitState = React.useState(0); // bubble 档：进入编辑时气泡原宽
       var bubbleInitW = bubbleInitState[0];
       var isEditPending = pending && pending.type === "edit" && pending.targetKey === myKey;
@@ -1587,6 +1615,20 @@ window.__ModuleLoader__.load({
         }
       }, [isEditPending]);
 
+      // 极限场景预检：该消息是否为会话第一条 user 消息（首条/截断会话无前置闭合边界）
+      function isFirstUserMessage() {
+        try {
+          var snap = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
+          if (snap && snap.chat && Array.isArray(snap.chat.order) && snap.chat.nodes && typeof snap.chat.nodes.get === "function") {
+            var ord = snap.chat.order;
+            for (var oi = 0; oi < ord.length; oi++) {
+              var on = snap.chat.nodes.get(ord[oi]);
+              if (on && on.kind === "user") return on.key === myKey;
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return false;
+      }
       // 统计该消息之后的内容条数（x 条内容）——防御式读取：任何异常都不影响气泡渲染
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
       var afterCount = 0;
@@ -1683,6 +1725,13 @@ window.__ModuleLoader__.load({
       // ---------- 编辑态（气泡 rewrite） ----------
       function enterEdit(initWidth) {
         if (pending) { log("warn", "edit", "已有待处理操作（单待定约束），请先处理"); return; }
+        // 极限场景预检：会话第一条 user 消息无前置闭合边界（含截断会话），直接提示不发请求
+        if (isFirstUserMessage()) {
+          setOpError(L.errNoBoundary);
+          setTimeout(function () { setOpError(null); }, 5000);
+          log("warn", "edit", "首条消息不可编辑（无前置边界）");
+          return;
+        }
         var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
         writePending(sessionId, { type: "edit", targetKey: myKey, targetSeq: realSeq, draftText: text, updatedAt: Date.now() });
         if (initWidth && initWidth > 0) bubbleInitState[1](initWidth);
@@ -1732,8 +1781,10 @@ window.__ModuleLoader__.load({
           var data = await resp.json();
           if (!data || !data.ok) {
             log("warn", "edit", "编辑重发失败（边界）", { error: data && data.error });
-            // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容
+            // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容；显示可见原因
             setEditing(true);
+            setOpError(data && data.error === "no-boundary" ? L.errNoBoundary : (data && data.error === "turn-open" ? L.errTurnOpen : L.errGeneric));
+            setTimeout(function () { setOpError(null); }, 5000);
             return;
           }
           var newId = null;
@@ -1828,6 +1879,7 @@ window.__ModuleLoader__.load({
           React.createElement(
             "div", { style: editBoxStyle },
             hasUnpreservable ? React.createElement("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-warning, #b7791f)", marginBottom: "6px", lineHeight: "1.5" } }, L.attachWarning) : null,
+            opError ? React.createElement("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-error, #d9534f)", marginBottom: "6px", lineHeight: "1.5" } }, opError) : null,
             React.createElement("textarea", {
               value: editText,
               rows: taRows,
@@ -1850,6 +1902,13 @@ window.__ModuleLoader__.load({
             "div", { style: actionsStyle },
             actionButton("撤回", "撤回", function (e) {
               e.stopPropagation();
+              // 极限场景预检：首条消息（含截断会话）无前置边界，直接提示
+              if (isFirstUserMessage()) {
+                setOpError(L.errNoBoundary);
+                setTimeout(function () { setOpError(null); }, 5000);
+                log("warn", "recall", "首条消息不可撤回（无前置边界）");
+                return;
+              }
               // 编辑态直接转撤回：丢弃编辑草稿 → 确认胶囊
               if (isEditPending) writePending(sessionId, null);
               setEditing(false);
@@ -1915,6 +1974,13 @@ window.__ModuleLoader__.load({
                     e.stopPropagation();
                     if (pending && pending.type === "recall") {
                       log("warn", "recall", "已有待处理撤回（单待定约束）");
+                      return;
+                    }
+                    // 极限场景预检：首条消息（含截断会话）无前置边界，直接提示
+                    if (isFirstUserMessage()) {
+                      setOpError(L.errNoBoundary);
+                      setTimeout(function () { setOpError(null); }, 5000);
+                      log("warn", "recall", "首条消息不可撤回（无前置边界）");
                       return;
                     }
                     // review M5：存在编辑待定 → 丢弃编辑草稿转撤回（与编辑态操作区撤回键同语义）

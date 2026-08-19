@@ -1,6 +1,6 @@
 {
   "name": "dsh-easyrewrite",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Bubble edit & recall for DSH Web — inline edit, undo/recall with version pager. 气泡内联编辑与撤回插件。DSH Web のバブル編集・撤回プラグイン。修复了一些已知的可能影响用户体验的问题。Includes fixes for known UX-affecting issues. 既知のユーザー体験に影響する問題を修正済み。",
   "type": "module",
   "main": "lib/index.js",

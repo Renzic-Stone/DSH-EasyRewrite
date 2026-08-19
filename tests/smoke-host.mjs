@@ -60,3 +60,57 @@ function ev(seq, type) { return { seq, type }; }
 }
 
 console.log('\nAll smoke tests passed ✔');
+
+// 6) resolveBoundary：截断会话首条消息（新会话从 turn/start 开始，目标后回合已闭合）→ no-boundary（M10 语义）
+{
+  const ctx = { sessions: { get: () => ({ events: [
+    { seq: 0, type: 'session' }, { seq: 1, type: 'turn/start' }, { seq: 2, type: 'user/message' },
+    { seq: 3, type: 'assistant/message' }, { seq: 4, type: 'turn/end' }
+  ] }) } };
+  const r = __test.resolveBoundary(ctx, 'session-x', 2); // 截断后第一条 user
+  assert.equal(r.code, 'no-boundary', '截断会话首条消息应报 no-boundary（而非 turn-open）');
+  console.log('✓ 截断会话首条消息 → no-boundary');
+}
+
+// 7) resolveBoundary：目标回合未闭合（目标后无 turn/end）→ turn-open
+{
+  const ctx = { sessions: { get: () => ({ events: [
+    { seq: 0, type: 'session' }, { seq: 1, type: 'turn/start' }, { seq: 2, type: 'user/message' },
+    { seq: 3, type: 'assistant/message' }  // 无 turn/end（回合进行中）
+  ] }) } };
+  const r = __test.resolveBoundary(ctx, 'session-y', 2);
+  assert.equal(r.code, 'turn-open', '未闭合回合应报 turn-open');
+  console.log('✓ 未闭合回合 → turn-open');
+}
+
+// 8) resolveBoundary：首回合已闭合但目标为首回合消息 → no-boundary（M10 修复：不误报 turn-open）
+{
+  const ctx = { sessions: { get: () => ({ events: [
+    { seq: 0, type: 'session' }, { seq: 1, type: 'turn/start' }, { seq: 2, type: 'user/message' },
+    { seq: 3, type: 'assistant/message' }, { seq: 4, type: 'turn/end' },
+    { seq: 5, type: 'turn/start' }, { seq: 6, type: 'user/message' }
+  ] }) } };
+  const r = __test.resolveBoundary(ctx, 'session-z', 2); // 首回合 user，回合已闭合
+  assert.equal(r.code, 'no-boundary', '首回合已闭合应报 no-boundary（M10）');
+  console.log('✓ 首回合已闭合 → no-boundary（非 turn-open）');
+}
+
+// 9) resolveBoundary：目标在闭合回合 2 内（前有回合 1 边界）→ 正常返回边界
+{
+  const ctx = { sessions: { get: () => ({ events: [
+    { seq: 0, type: 'session' }, { seq: 1, type: 'turn/start' }, { seq: 2, type: 'user/message' },
+    { seq: 3, type: 'assistant/message' }, { seq: 4, type: 'turn/end' },
+    { seq: 5, type: 'turn/start' }, { seq: 6, type: 'user/message' }, { seq: 7, type: 'assistant/message' },
+    { seq: 8, type: 'turn/end' }, { seq: 9, type: 'turn/start' }, { seq: 10, type: 'user/message' }
+  ] }) } };
+  const r = __test.resolveBoundary(ctx, 'session-w', 10);
+  assert.equal(r.boundary, 8, '边界应为最近的 turn/end(8)');
+  console.log('✓ 闭合回合内目标 → 边界正常');
+}
+
+// 10) resolveBoundary：会话不存在 → session-not-found
+{
+  const r = __test.resolveBoundary({ sessions: { get: () => undefined } }, 'session-nope', 1);
+  assert.equal(r.code, 'session-not-found', '未知会话应 404');
+  console.log('✓ 未知会话 → session-not-found');
+}

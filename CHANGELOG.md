@@ -2,6 +2,13 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.2.4] — 极限场景体验：失败可见提示 + 首条消息预检 + 测试覆盖
+
+- **失败可见提示**：撤回发送 / 编辑确定失败（no-boundary / turn-open / 其他）时，输入区上方 / 编辑态内显示三语错误原因（5s 自动消失）——不再点了没反应
+- **首条消息预检**：会话第一条 user 消息（含截断会话）点击撤回 / 进入编辑时直接提示，不再发请求撞 409
+- **极限场景测试**：smoke 扩展至 10 项（截断会话首条、未闭合回合、首回合已闭合不误报、闭合回合正常边界、未知会话）
+- resolveBoundary 加入 __test 导出
+
 ## [1.2.3] — 紧急修复：i18n 改造引入的 hooks 顺序回归
 
 - **VersionPager 崩溃（React #300）**：i18n 改造把 `useUILocaleDict()`（hook）放在了两个 `return null` 之后——家族版本 <2 或非最后回合的渲染路径 hooks 数量漂移 → `conversation.chat.assistant-actions` 槽崩溃 → `< X >` 占位不显示
