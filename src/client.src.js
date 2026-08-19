@@ -516,18 +516,18 @@ window.__ModuleLoader__.load({
         recallInFlight = true;
         try {
           var sid = props.sessionId;
-          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork）
-          if (isFirstUserMessage(props, p.targetKey)) {
-            recallInFlight = false;
-            resetConversation(sid, "recall", null, props);
-            return;
-          }
-          // 读取输入框当前文本（用户可能已修改）：resume 发送的是修改后的内容
+          // 读取输入框当前文本（用户可能已修改）：重置/重发都使用修改后的内容
           var sendText = p.draftText;
           try {
             var ta = document.querySelector("[data-input-scroll] textarea");
             if (ta && typeof ta.value === "string" && ta.value !== "") sendText = ta.value;
           } catch (e) { /* ignore */ }
+          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork），输入框内容带到新起点自动发送
+          if (isFirstUserMessage(props, p.targetKey)) {
+            recallInFlight = false;
+            resetConversation(sid, "edit", sendText, props);
+            return;
+          }
           // review L5：日志去内容化（只记长度，不落明文）
           log("info", "recall", "发送内容（修改后）", { sendLen: sendText.length });
           var resp = await fetch("/bubble/recall", {
@@ -540,9 +540,9 @@ window.__ModuleLoader__.load({
             var errCode = (data && data.error) || "unknown";
             log("warn", "recall", "撤回失败（发送中止）", { error: errCode });
             if (errCode === "turn-open" || errCode === "no-boundary") {
-              // 极限场景（说一半截断 / 首条无边界）：删半截对话，从上次模型回复重新开始（家族）或空白顶替
+              // 极限场景（说一半截断 / 首条无边界）：删半截对话，输入框内容带到新起点自动发送
               showRecallError(L.resetNotice);
-              resetConversation(sid, "recall", null, props);
+              resetConversation(sid, "edit", sendText, props);
             } else {
               showRecallError(L.errGeneric);
             }
