@@ -517,7 +517,7 @@ window.__ModuleLoader__.load({
         try {
           var sid = props.sessionId;
           // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork）
-          if (isFirstUserMessage(props, myKey)) {
+          if (isFirstUserMessage(props, p.targetKey)) {
             recallInFlight = false;
             resetConversation(sid, "recall", null, props);
             return;
