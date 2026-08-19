@@ -12,6 +12,12 @@
 - 切换逻辑抽为模块级 `goToVersion`（按钮与键盘共用，键盘事件实时读家族，顺带消除陈旧闭包隐患）
 - 全组件 hooks 顺序扫描确认无同类隐患
 
+## [1.2.0] — 官方 i18n 支持（三语全覆盖）
+
+- **接入官方 locale 机制**（dsh-client-locale）：注册 zh/en/ja 字典，跟随官方语言设置，切换语言即时生效（useSyncExternalStore 驱动组件重渲染）
+- **UI 硬编码文案全部三语化**：正在修改条 / 编辑确定取消 / 复制与已复制 / 查看原文 / 空消息 / 灰字气泡 / 点击编辑 / 确认胶囊文案（含 {n} 参数模板）与按钮 / 取消撤回
+- GitHub topics 增加 i18n / internationalization / multilingual / localization 标签（便于国际用户发现）
+
 ## [1.1.0] — 编辑附件保留重发（M4 闭环）
 
 - **图片附件保留**：编辑带图消息 → 确定重发后附件随修改文本一起重发（官方链路：`conversation.resolveImage` 取回会话授权 URL → fetch → `createDraftImages` → `addImages` → 自动发送）
