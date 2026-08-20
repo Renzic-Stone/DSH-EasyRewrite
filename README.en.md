@@ -55,16 +55,16 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 
 | Capability | dsh-easyrewrite | Other recall/edit plugins |
 | :--- | :---: | :--- |
-| Bubble inline edit (Rewrite) | ✅ | No comparable feature in any competitor |
-| Recall | ✅ | ✅ |
-| **Lazy commit** (context changes only after you confirm; closing mid-way changes nothing) | ✅ | Most apply immediately |
-| **Seamless replacement** (archive + same-titled session takes over) | ✅ | Rare |
-| **Version pager < X >** (history switching + archive swap — one active version in the sidebar) | ✅ | No comparable feature in any competitor |
-| **Draft persistence + auto-backup + crash recovery** | ✅ | No comparable feature in any competitor |
+| Recall | ✅ | Basic capability |
+| **Seamless replacement** (feels like a *native* feature — frictionless edit-resend) | ✅ | Basic capability, but ours is **more refined** |
+| **Lazy commit** (context changes only after you confirm; closing mid-way changes nothing) | ✅ | Some competitors edit immediately, causing cache-hit / context issues |
+| **Bubble inline edit (Rewrite)** | ✅ | **No comparable feature in any competitor** |
+| **Version pager < X >** (switch history versions — a **gold-standard design** proven by countless Chatbox users) | ✅ | **No comparable feature in any competitor** |
+| **Draft persistence + timeout auto-backup + crash recovery** (solid recovery that protects every bit of your thinking) | ✅ | **No comparable feature in any competitor** |
 | **Attachment-preserving edit resend** | ✅ | No comparable feature in any competitor |
-| **Official extension points only** (zero source patches) | ✅ | Some depend on source patches |
-| Trilingual UI & i18n | ✅ | Mostly absent |
-| Every feature can be toggled off | ✅ | Few |
+| **Official extension points only** (zero source patches, clean uninstall) | ✅ | Competitors rely on source patches — hard to uninstall, complex dependencies |
+| Trilingual UI & i18n | ✅ | Few have proper i18n; we natively support multiple languages with three presets |
+| **Every feature can be toggled off** | ✅ | **No competitor does it better** |
 
 ---
 
