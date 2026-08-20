@@ -2,6 +2,10 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] — 描述回退
+
+- npm / GitHub 描述回退为三语主体（移除修复说明句——该信息保留在 CHANGELOG 各版本条目中）
+
 ## [1.3.0] — 内置更新支持（精简版）
 
 - **设置 → 插件配置 → 「更新」组**：显示当前版本 + [检查更新]（手动 get npm 最新版）+ 有新版时一键 [更新]（host 执行 pnpm up，更新完成提示重启生效）
