@@ -2,6 +2,10 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.5] — README 对比表优化
+
+- 对比表对勾列居中排版；措辞对齐宣传帖广告化风格（"目前市面竞品完全无同类功能"等，三语）
+
 ## [1.3.4] — README 差异化对比表
 
 - README 三语新增「与同类插件的差异」对比表（惰性提交 / 无痕替换 / 版本翻页器+归档交换 / 草稿持久化+自动备份 / 附件保留 / 纯官方扩展点 / 三语 / 按需开关）

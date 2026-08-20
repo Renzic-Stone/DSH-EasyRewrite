@@ -53,15 +53,17 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 
 ## How we differ from similar plugins
 
-| Capability | dsh-easyrewrite | Common recall/edit plugins |
-| --- | --- | --- |
-| **Lazy commit** (context changes only after you confirm; closing mid-way changes nothing) | ✅ | Most apply immediately on click |
-| **Seamless replacement** (archive + same-titled session takes over — feels like the original conversation was edited) | ✅ | Rare (most fork a new branch) |
-| **Version pager < X >** (switch history versions + archive swap — only one active version in the sidebar) | ✅ | Few have paging, none have archive swap |
-| **Draft persistence** (per-session + timeout auto-backup + crash recovery) | ✅ | Essentially absent |
-| **Attachment-preserving edit resend** (images survive) | ✅ | Essentially absent |
-| **Official extension points only** (zero source patches, clean uninstall) | ✅ | Some depend on source patches or unreleased runtime events |
-| Trilingual UI (中文 / English / 日本語) | ✅ | Mostly single-language |
+| Capability | dsh-easyrewrite | Other recall/edit plugins |
+| :--- | :---: | :--- |
+| Bubble inline edit (Rewrite) | ✅ | No comparable feature in any competitor |
+| Recall | ✅ | ✅ |
+| **Lazy commit** (context changes only after you confirm; closing mid-way changes nothing) | ✅ | Most apply immediately |
+| **Seamless replacement** (archive + same-titled session takes over) | ✅ | Rare |
+| **Version pager < X >** (history switching + archive swap — one active version in the sidebar) | ✅ | No comparable feature in any competitor |
+| **Draft persistence + auto-backup + crash recovery** | ✅ | No comparable feature in any competitor |
+| **Attachment-preserving edit resend** | ✅ | No comparable feature in any competitor |
+| **Official extension points only** (zero source patches) | ✅ | Some depend on source patches |
+| Trilingual UI & i18n | ✅ | Mostly absent |
 | Every feature can be toggled off | ✅ | Few |
 
 ---
