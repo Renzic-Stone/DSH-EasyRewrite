@@ -2,6 +2,10 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.3] — 描述三语化
+
+- npm / GitHub 描述在用户原版中文基础上补充英文与日文（保留原句，三语并列）
+
 ## [1.3.2] — 描述回退为用户原版
 
 - npm / GitHub 描述统一回退为用户最初撰写的中文版（"DSH Web内目前最无感的消息撤回、重编辑插件…"）
