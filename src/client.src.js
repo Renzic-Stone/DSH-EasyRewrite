@@ -1770,7 +1770,6 @@ window.__ModuleLoader__.load({
       function go(delta) {
         goToVersion(family, sessionId, index + delta, props, cleanupRef);
       }
-      var L = useUILocaleDict();
       var pagerStyle = {
         display: "inline-flex",
         alignItems: "center",
