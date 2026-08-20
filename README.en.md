@@ -51,6 +51,21 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 
 ---
 
+## How we differ from similar plugins
+
+| Capability | dsh-easyrewrite | Common recall/edit plugins |
+| --- | --- | --- |
+| **Lazy commit** (context changes only after you confirm; closing mid-way changes nothing) | ✅ | Most apply immediately on click |
+| **Seamless replacement** (archive + same-titled session takes over — feels like the original conversation was edited) | ✅ | Rare (most fork a new branch) |
+| **Version pager < X >** (switch history versions + archive swap — only one active version in the sidebar) | ✅ | Few have paging, none have archive swap |
+| **Draft persistence** (per-session + timeout auto-backup + crash recovery) | ✅ | Essentially absent |
+| **Attachment-preserving edit resend** (images survive) | ✅ | Essentially absent |
+| **Official extension points only** (zero source patches, clean uninstall) | ✅ | Some depend on source patches or unreleased runtime events |
+| Trilingual UI (中文 / English / 日本語) | ✅ | Mostly single-language |
+| Every feature can be toggled off | ✅ | Few |
+
+---
+
 ## Design philosophy
 
 **1. Simple to use, easy to onboard, compatible by contract**

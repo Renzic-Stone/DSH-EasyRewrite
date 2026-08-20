@@ -2,6 +2,10 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.4] — README 差异化对比表
+
+- README 三语新增「与同类插件的差异」对比表（惰性提交 / 无痕替换 / 版本翻页器+归档交换 / 草稿持久化+自动备份 / 附件保留 / 纯官方扩展点 / 三语 / 按需开关）
+
 ## [1.3.3] — 描述三语化
 
 - npm / GitHub 描述在用户原版中文基础上补充英文与日文（保留原句，三语并列）
