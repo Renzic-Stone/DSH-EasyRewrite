@@ -61,5 +61,9 @@
     "build": "node build.mjs",
     "prepare": "node build.mjs",
     "prepack": "node build.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Renzic-Stone/DSH-EasyRewrite.git"
   }
 }
