@@ -2,6 +2,12 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.3.6] — 修复 VersionPager 重复 L hook（React #300 复发）
+
+- 长对话场景下 `conversation.chat.assistant-actions` 槽再次崩溃（React #300）：VersionPager 内 `useUILocaleDict()` 残留两份——顶部 hooks 区一份（正确）+ 两个 return null 之后又一份（历史修复残留）→ 渲染路径 hooks 数量 3 vs 4 漂移
+- 修复：删除 return null 后的重复声明；全组件扫描确认其余组件均为 1 份
+- 连带修复编辑发送延迟/异常（#300 崩溃干扰渲染循环）
+
 ## [1.3.5] — README 对比表优化
 
 - 对比表对勾列居中排版；措辞对齐宣传帖广告化风格（"目前市面竞品完全无同类功能"等，三语）

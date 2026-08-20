@@ -1,6 +1,6 @@
 {
   "name": "dsh-easyrewrite",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "DSH Web内目前最无感的消息撤回、重编辑插件，原版体验，兼容性强，功能简单可开关，设置丰富，现代化轻量ui框架。The most seamless message recall & re-edit plugin for DSH Web — native experience, strong compatibility, simple toggles, rich settings, modern lightweight UI. DSH Web で最もシームレスなメッセージ撤回・再編集プラグイン——ネイティブ体験、高い互換性、シンプルなトグル、充実した設定、モダンで軽量な UI。",
   "type": "module",
   "main": "lib/index.js",
