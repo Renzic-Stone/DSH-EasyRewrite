@@ -282,6 +282,20 @@ window.__ModuleLoader__.load({
     }
     var ctxConversationRef = null; // apply 时注入 conversation 服务
 
+    // ---------- 语义化版本比较（1.2.4 < 1.3.0；缺失段视为 0） ----------
+    function versionGt(a, b) {
+      var pa = String(a || "0").split(".").map(function (x) { return parseInt(x, 10) || 0; });
+      var pb = String(b || "0").split(".").map(function (x) { return parseInt(x, 10) || 0; });
+      var len = Math.max(pa.length, pb.length);
+      for (var vi = 0; vi < len; vi++) {
+        var av = pa[vi] || 0;
+        var bv = pb[vi] || 0;
+        if (av > bv) return true;
+        if (av < bv) return false;
+      }
+      return false;
+    }
+
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
     var PENDING_PREFIX = "dsh-easyrewrite:pending:";
     var pendingCache = {};
@@ -1100,7 +1114,7 @@ window.__ModuleLoader__.load({
           setUpdateChecking(false);
           if (!d || !d.ok) { setUpdateMsg(L.updateFailed); return; }
           setUpdateVer(d.current || "?");
-          if (d.latest && d.latest !== d.current) {
+          if (d.latest && versionGt(d.latest, d.current || "0")) {
             setUpdateAvailableVer(d.latest);
             try { localStorage.setItem("dsh-easyrewrite:updateAvailable", "1"); } catch (e) { /* ignore */ }
           } else {
@@ -1490,7 +1504,7 @@ window.__ModuleLoader__.load({
           ),
           // —— 更新 ——
           React.createElement("div", { style: sectionStyle },
-            React.createElement("span", { style: groupTitleStyle }, L.sectionUpdate + (updateAvailableVer ? " ⚡" : "")),
+            React.createElement("span", { style: groupTitleStyle }, L.sectionUpdate),
             // 更新检查与执行（精简版：手动检查 + 每日检测可选 + 有新版提示）
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.currentVersion + "：" + (updateVer || "…")),
