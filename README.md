@@ -12,6 +12,15 @@
 
 ---
 
+## 快速开始
+
+```sh
+# npm一键安装
+
+dsh plugin --profile web add dsh-easyrewrite
+
+```
+
 ## 已实现功能
 
 ### 撤回（Recall）——端到端完成
