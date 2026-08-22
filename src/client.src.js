@@ -1055,6 +1055,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "回填",
         sectionVersions: "版本",
         versionFamilies: "版本家族（撤回/编辑重发）",
+        versionHistory: "版本历史",
         versionFamilyNone: "暂无版本家族",
         versionRestoreOpen: "恢复并打开",
         versionCount: "个版本"
@@ -1132,6 +1133,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "Composer fill",
         sectionVersions: "Versions",
         versionFamilies: "Version families (recall/edit resends)",
+        versionHistory: "Version history",
         versionFamilyNone: "None yet",
         versionRestoreOpen: "Restore & open",
         versionCount: "versions"
@@ -1209,6 +1211,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "入力欄",
         sectionVersions: "バージョン",
         versionFamilies: "バージョンファミリー（撤回/編集再送）",
+        versionHistory: "バージョン履歴",
         versionFamilyNone: "まだありません",
         versionRestoreOpen: "復元して開く",
         versionCount: "バージョン"
@@ -1262,6 +1265,13 @@ window.__ModuleLoader__.load({
       var confirmCapsule = sConfirm[0];
       var setConfirmCapsule = sConfirm[1];
       // —— 更新状态（检查/执行；每日检测开关默认关） ——
+        // —— 版本历史三层折叠（review 后新增）：总开关默认收起；各家族默认收起 ——
+        var sHistOpen = React.useState(false);
+        var histOpen = sHistOpen[0];
+        var setHistOpen = sHistOpen[1];
+        var sFamOpen = React.useState({});
+        var famOpenMap = sFamOpen[0];
+        var setFamOpenMap = sFamOpen[1];
       var sUpdateVer = React.useState("");
       var updateVer = sUpdateVer[0];
       var setUpdateVer = sUpdateVer[1];
@@ -1647,48 +1657,71 @@ window.__ModuleLoader__.load({
           // —— 版本 ——
           React.createElement("div", { style: sectionStyle },
             React.createElement("span", { style: groupTitleStyle }, L.sectionVersions),
-            // 版本家族管理：全归档后也能从这里恢复并打开（官方无归档恢复入口）
+            // 版本历史（三层折叠）：总开关默认收起 → 按对话名的家族折叠项 → 条目显最后对话时间
+            // （官方无归档恢复入口，此处保留恢复并打开；review #6 后家族来自官方 lineage）
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.versionFamilies),
               (function () {
                 var families = listVersionFamilies(props.ctxSessions);
                 if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
-                return families.map(function (fam) {
-                  return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "4px", padding: "6px 0", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.18))" } },
-                    React.createElement("span", { style: hintStyle }, fam.versions.length + " " + L.versionCount),
-                    fam.versions.map(function (vid, vi) {
-                      return React.createElement("div", { key: vid, style: rowStyle },
-                        React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none" } }, "v" + (vi + 1)),
-                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, vid),
-                        React.createElement("button", {
-                          type: "button",
-                          style: {
-                            appearance: "none",
-                            border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
-                            background: "transparent",
-                            color: "var(--dsw-alias-label-secondary)",
-                            borderRadius: "6px",
-                            padding: "2px 8px",
-                            fontSize: "12px",
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                            flex: "none"
-                          },
-                          onClick: function () {
-                            fetch("/bubble/unarchive", {
-                              method: "POST",
-                              headers: { "content-type": "application/json" },
-                              body: JSON.stringify({ sessionId: vid }),
-                              keepalive: true
-                            }).then(function () {
-                              if (typeof props.openSession === "function") props.openSession(vid);
-                            }).catch(function () { /* ignore */ });
-                          }
-                        }, L.versionRestoreOpen)
-                      );
-                    })
-                  );
-                });
+                var snap = null;
+                try { snap = props.ctxSessions.list.getSnapshot(); } catch (e) { /* ignore */ }
+                var metaOf = function (vid) { return (snap && snap.byId && snap.byId[vid]) || {}; };
+                var famName = function (fam) {
+                  var best = null, bt = -1;
+                  fam.versions.forEach(function (vid) {
+                    var m = metaOf(vid); var tt = m.updatedAt || 0;
+                    if (tt >= bt) { bt = tt; best = m.title || null; }
+                  });
+                  return best || (fam.versions.length + " " + L.versionCount);
+                };
+                var fmtStamp = function (tsv) {
+                  if (!tsv) return "—";
+                  var dd = new Date(tsv);
+                  var p2 = function (x) { return (x < 10 ? "0" : "") + x; };
+                  return dd.getFullYear() + "-" + p2(dd.getMonth() + 1) + "-" + p2(dd.getDate()) + " " + p2(dd.getHours()) + ":" + p2(dd.getMinutes());
+                };
+                var chev = function (openState) { return React.createElement("span", { style: { flex: "none", fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", width: "14px" } }, openState ? "▾" : "▸"); };
+                var rowHead = { display: "flex", alignItems: "center", gap: "6px", padding: "5px 4px", cursor: "pointer", borderRadius: "6px" };
+                // 层1：版本历史总折叠（默认收起）
+                return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } },
+                  React.createElement("div", { style: rowHead, onClick: function () { setHistOpen(!histOpen); } },
+                    chev(histOpen),
+                    React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary)" } }, L.versionHistory),
+                    React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", marginLeft: "auto" } }, families.length + "")
+                  ),
+                  histOpen ? families.map(function (fam) {
+                    var open = !!famOpenMap[fam.rootId];
+                    return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "2px", padding: "2px 0 2px 12px", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.14))" } },
+                      React.createElement("div", { style: rowHead, onClick: function () { var nm = {}; for (var ok2 in famOpenMap) nm[ok2] = famOpenMap[ok2]; nm[fam.rootId] = !open; setFamOpenMap(nm); } },
+                        chev(open),
+                        React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, famName(fam)),
+                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", flex: "none" } }, fam.versions.length + " " + L.versionCount)
+                      ),
+                      open ? fam.versions.map(function (vid, vi) {
+                        return React.createElement("div", { key: vid, style: rowHead },
+                          React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none", width: "26px" } }, "v" + (vi + 1)),
+                          React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "1" } }, fmtStamp(metaOf(vid).updatedAt)),
+                          React.createElement("button", {
+                            type: "button",
+                            style: { appearance: "none", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))", background: "transparent", color: "var(--dsw-alias-label-secondary)", borderRadius: "6px", padding: "2px 8px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" },
+                            onClick: function (ev) {
+                              ev.stopPropagation();
+                              fetch("/bubble/unarchive", {
+                                method: "POST",
+                                headers: { "content-type": "application/json" },
+                                body: JSON.stringify({ sessionId: vid }),
+                                keepalive: true
+                              }).then(function () {
+                                if (typeof props.openSession === "function") props.openSession(vid);
+                              }).catch(function () { /* ignore */ });
+                            }
+                          }, L.versionRestoreOpen)
+                        );
+                      }) : null
+                    );
+                  }) : null
+                );
               })()
             )
           ),
