@@ -1246,7 +1246,7 @@ window.__ModuleLoader__.load({
       return SETTINGS_I18N[active] || SETTINGS_I18N.zh;
     }
     /** 设置卡片：注册进 settings.plugin.item（设置 → 插件 → 插件配置）。 */
-    function EasyRewriteSettingsCard() {
+    function EasyRewriteSettingsCard(props) {
       var L = useUILocaleDict();
       var openState = React.useState(false);
       var open = openState[0];
