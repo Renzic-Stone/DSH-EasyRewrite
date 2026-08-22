@@ -61,42 +61,64 @@ window.__ModuleLoader__.load({
     function editOffShowRecall() { return getBool("dsh-easyrewrite:editOffShowRecall", true); }
     function recallConfirmEnabled() { return getBool("dsh-easyrewrite:recallConfirm", true); }
 
-    // ---------- 版本家族（< X > 翻页器）：派生自官方 parentSessionId lineage（review #6 删 localStorage 自建树） ----------
-    // 官方 fork 时 host 写 meta.parentSession、client 同步 upsert summary.parentSessionId
-    // （runtime client.js："lineage rides parentSessionId so the list nests it under its source"），
+    // ---------- 版本家族（< X > 翻页器）：派生自官方 parentId lineage（review #6 删 localStorage 自建树） ----------
+    // 官方 fork：host 写 meta.parentSession，client upsert summary.parentSessionId；
+    // 投影层 projectList 把它映射为 byId[].parentId（并带 origin 字段，origin==="subagent" 为子代理会话，排除）。
     // 归档会话仍在 sessions.list——家族关系天然持久，无需自建存储。
     function sessionLineageRoot(byId, id) {
       var cur = id, guard = 0;
       while (guard++ < 64) {
         var s = byId[cur];
-        var p = s && s.parentSessionId;
-        if (!p || !byId[p]) return cur; // 父不在列表 → 当前即 root
+        var p = s && s.parentId;
+        if (p === void 0 || !byId[p]) return cur; // 父不在列表 → 当前即 root
         cur = p;
       }
       return cur;
     }
-    /** 派生版本家族：{rootId, versions[](updatedAt 升序=fork 时间序), index}；子代理会话排除。 */
+    /** 派生版本家族：{rootId, versions[](深度升序=fork 时间序，updatedAt 次序), index}；子代理排除。 */
     function familyOfSession(sessionId, ctxSessions) {
       try {
         if (!ctxSessions || !ctxSessions.list || typeof ctxSessions.list.getSnapshot !== "function") return null;
         var snap = ctxSessions.list.getSnapshot();
         if (!snap || !snap.byId || !snap.byId[sessionId]) return null;
-        var subChild = {};
-        if (snap.subagentsByParent) {
-          for (var pid in snap.subagentsByParent) {
-            var arr = snap.subagentsByParent[pid];
-            if (Array.isArray(arr)) for (var si = 0; si < arr.length; si++) subChild[arr[si]] = true;
+        var ids = Array.isArray(snap.ids) ? snap.ids : [];
+        // 深度表：parentId 链深度（root=0）——深度升序=旧 append/fork 序且稳定（updatedAt 是活动时间，root 续聊会漂移）
+        var depth = {};
+        for (var pass = 0; pass < 64; pass++) {
+          var changed = false;
+          for (var i = 0; i < ids.length; i++) {
+            var id0 = ids[i];
+            if (depth[id0] !== void 0) continue;
+            var s0 = snap.byId[id0];
+            if (!s0) continue;
+            var p0 = s0.parentId;
+            if (p0 === void 0 || !snap.byId[p0]) { depth[id0] = 0; changed = true; }
+            else if (depth[p0] !== void 0) { depth[id0] = depth[p0] + 1; changed = true; }
           }
+          if (!changed) break;
         }
         var root = sessionLineageRoot(snap.byId, sessionId);
         var versions = [];
-        for (var i = 0; i < snap.ids.length; i++) {
-          var id = snap.ids[i];
-          if (subChild[id]) continue;
-          if (sessionLineageRoot(snap.byId, id) === root) versions.push(id);
+        for (var j = 0; j < ids.length; j++) {
+          var id = ids[j];
+          var sj = snap.byId[id];
+          if (sj && sj.origin === "subagent") continue; // 子代理会话不入家族
+          if (depth[id] === void 0) continue;
+          var cur = id, g2 = 0, ok = false;
+          while (g2++ < 64) {
+            if (cur === root) { ok = true; break; }
+            var s5 = snap.byId[cur];
+            var pp = s5 && s5.parentId;
+            if (pp === void 0 || !snap.byId[pp] || depth[pp] === void 0) break;
+            cur = pp;
+          }
+          if (ok) versions.push(id);
         }
         if (versions.indexOf(sessionId) < 0) versions.unshift(sessionId);
         versions.sort(function (a, b) {
+          var da = depth[a] !== void 0 ? depth[a] : 999;
+          var db = depth[b] !== void 0 ? depth[b] : 999;
+          if (da !== db) return da - db;
           var sa = snap.byId[a] || {}, sb = snap.byId[b] || {};
           var ta = sa.updatedAt || 0, tb = sb.updatedAt || 0;
           if (ta !== tb) return ta - tb;
@@ -114,11 +136,12 @@ window.__ModuleLoader__.load({
         if (!snap || !snap.byId) return [];
         var seen = {};
         var out = [];
-        for (var i = 0; i < snap.ids.length; i++) {
-          var root = sessionLineageRoot(snap.byId, snap.ids[i]);
+        var ids = Array.isArray(snap.ids) ? snap.ids : [];
+        for (var i = 0; i < ids.length; i++) {
+          var root = sessionLineageRoot(snap.byId, ids[i]);
           if (seen[root]) continue;
           seen[root] = true;
-          var fam = familyOfSession(snap.ids[i], ctxSessions);
+          var fam = familyOfSession(ids[i], ctxSessions);
           if (fam && fam.versions.length >= 2) out.push(fam);
         }
         return out;
@@ -566,6 +589,9 @@ window.__ModuleLoader__.load({
             if (!n2 || n2.kind !== "turn-tail") continue;
             var cl = n2.data && n2.data.closing;
             if (cl && cl.finalNode && typeof cl.finalNode.seq === "number") return { atSeq: cl.finalNode.seq };
+            // closing 缺失（纯工具/无文本回合）→ 回退尾节点自身 seq（官方槽位同款 closing?.finalNode.seq ?? data.seq），
+            // 跳过会把边界推得更早、整段误切
+            if (n2.data && typeof n2.data.seq === "number") return { atSeq: n2.data.seq };
           }
           var hasMore = snapshot.chat.hasMore === true;
           return hasMore ? { code: "host-fallback" } : { code: "no-boundary" };
@@ -2506,6 +2532,16 @@ window.__ModuleLoader__.load({
         try { if (typeof ctx.locale === "object" && ctx.locale !== null && typeof ctx.locale.register === "function") ctx.locale.register(NS, {}); } catch (e) { /* ignore */ }
         log("info", "lifecycle", "client half active");
         try { ctxConversationRef = ctx.conversation; } catch (e) { ctxConversationRef = null; }
+          // 陈旧版本树键清扫（review #6：lineage 已接管；旧 localStorage 键为死数据，启动时一次清掉）
+          try {
+            var stale = [];
+            for (var sk = 0; sk < localStorage.length; sk++) {
+              var skey = localStorage.key(sk);
+              if (skey && skey.indexOf("dsh-easyrewrite:versions:") === 0) stale.push(skey);
+            }
+            for (var sv = 0; sv < stale.length; sv++) localStorage.removeItem(stale[sv]);
+            if (stale.length > 0) log("info", "lifecycle", "已清扫陈旧版本树键", { count: stale.length });
+          } catch (e) { /* ignore */ }
         try {
           localeServiceRef = ctx.locale;
           if (localeServiceRef && typeof localeServiceRef.register === "function") {

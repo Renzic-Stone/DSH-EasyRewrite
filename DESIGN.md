@@ -170,7 +170,7 @@ User          Client(half)                              Host(half)           输
 
 - 数据：版本树存 localStorage（`dsh-easyrewrite:versions:<rootId>` = 版本 id 数组）：
   每个版本 = 一个真实 fork 会话（撤回/编辑产生的 `newId`）；家族根 = 第一次 fork 前的原会话；
-  撤回/编辑成功时自动登记（`registerVersionFork`）。
+撤回/编辑成功后版本家族由官方 parentSessionId lineage 派生（review #6：零自建存储，官方 fork 自动登记）。
 - 渲染：官方 `conversation.chat.assistant-actions` 槽（最后回答的操作区）；
   **只挂会话最后一个回合的 TurnTail**——用 turn-tail 节点 `data.closing.finalNode.messageId`
   与槽 props.messageId 对比（快照节点无 messageId 字段，必须用官方同源数据）；
