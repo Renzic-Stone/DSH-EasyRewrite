@@ -284,6 +284,7 @@ window.__ModuleLoader__.load({
     }
     // ---------- 图片桥接（review #3）：跨会话传递交官方全局 draftAttachments 单例，只记 imageIds ----------
     var pendingAttachIds = []; // 撤回确认时重建到输入框的图 id（× 取消时需移除）
+    var latestInputImageIds = []; // 输入框当前图 id 镜像（UserBubbleView 渲染时喂入；发送时据此搬运）
         var ctxConversationRef = null; // apply 时注入 conversation 服务
 
     // ---------- 语义化版本比较（1.2.4 < 1.3.0；缺失段视为 0） ----------
@@ -675,16 +676,10 @@ window.__ModuleLoader__.load({
             }
             boundary = data.boundary;
           }
-          // 0) 撤回前收集（review #2/#3）：输入框图片以官方 imageIds 为准——
-          //    Files 存于官方全局 draftAttachments 单例（跨会话存活，selectWorkspace 先例只搬 id 不重读字节）；
-          //    refs 随 pending 兜底（确认→发送间页面刷新会清空单例，此时回退 refs 重建）。
-          var imgIds = [];
-          var recallRefs = Array.isArray(p.attachRefs) ? p.attachRefs : [];
-          try {
-            var inpSnap = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : null;
-            if (inpSnap && Array.isArray(inpSnap.imageIds)) imgIds = inpSnap.imageIds.slice();
-          } catch (e) { /* ignore */ }
-          log("info", "attach", "撤回收集完成（官方 imageIds）", { count: imgIds.length, refsFallback: recallRefs.length });
+          // 0) 撤回前收集（review #2/#3）：读镜像——UserBubbleView 渲染时已从官方 useInput 快照同步，
+          //    覆盖确认时重建的图 + 用户手动加的图 − 用户删除的图（即发送瞬间的真实选择）。
+          var imgIds = latestInputImageIds.slice();
+          log("info", "attach", "撤回收集完成（镜像 imageIds）", { count: imgIds.length });
           // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题。
           //    官方 fork(atSeq) 即截断边界器；fork-unavailable 按原文子串分流：
     //    "has not completed the turn"=回合未结束→提示等待；"has no completed turn to fork from"=无前置边界→重置对话。
@@ -706,7 +701,7 @@ window.__ModuleLoader__.load({
           }
           writePending(sid, null);
           // review M6：resume-send 带时间戳（30s TTL，防陈旧草稿幽灵自动发送）
-          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: sendText, t: Date.now(), imageIds: imgIds, refs: recallRefs })); } catch (e) { /* ignore */ }
+          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: sendText, t: Date.now(), imageIds: imgIds })); } catch (e) { /* ignore */ }
           // 2) 无痕替换：归档原会话 → 打开新会话
           var archived = false;
           try {
@@ -769,9 +764,8 @@ window.__ModuleLoader__.load({
           log("info", "recall", "resume：回填草稿并自动发送", { sessionId: sessionId });
           var doSubmit = function () { setTimeout(function () { try { ia.submit(); } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); } }, 60); };
           // 图片桥接（review #3）：官方 draftAttachments 全局单例跨会话存活——resume 只搬 imageIds；
-          // 刷新会清空单例 → 计数校验失败后回退 refs 重建；仍失败则显式报错、不自动发送（禁止静默丢图）
+          // 刷新会清空单例 → 计数校验失败则显式报错、不自动发送（禁止静默丢图）
           var savedIds = Array.isArray(r.imageIds) ? r.imageIds : [];
-          var savedRefs = Array.isArray(r.refs) ? r.refs : [];
           var finishWithImages = function (carried) {
             if (carried) doSubmit();
             else {
@@ -787,14 +781,9 @@ window.__ModuleLoader__.load({
             if (missing.length === 0) {
               log("info", "attach", "resume 图片桥接成功（官方单例）", { count: savedIds.length });
               finishWithImages(true);
-            } else if (savedRefs.length > 0) {
-              log("warn", "attach", "imageIds 部分失效，回退 refs 重建", { missing: missing.length, refs: savedRefs.length });
-              rebuildDraftAttachments(savedRefs, props, sessionId).then(function (n) {
-                log("info", "attach", "resume refs 重建完成", { count: n });
-                finishWithImages(n > 0);
-              });
             } else {
-              finishWithImages(false);
+              log("error", "attach", "resume 图片无法恢复——已取消自动发送，草稿保留在输入框（可手动补图）", { missing: missing.length });
+              showRecallError(L.errGeneric);
             }
           };
           if (savedIds.length > 0 && typeof ia.addImages === "function") {
@@ -802,11 +791,6 @@ window.__ModuleLoader__.load({
             try { addOk = ia.addImages(savedIds) !== false; } catch (e) { addOk = false; log("warn", "attach", "addImages 抛错", { err: String(e && e.message ? e.message : e) }); }
             if (!addOk) log("warn", "attach", "addImages 返回 false（官方拒收/溢出）");
             setTimeout(verifyAndSend, 80); // 等 input 状态发布
-          } else if (savedRefs.length > 0) {
-            rebuildDraftAttachments(savedRefs, props, sessionId).then(function (n) {
-              log("info", "attach", "resume refs 重建完成", { count: n });
-              finishWithImages(n > 0);
-            });
           } else {
             doSubmit();
           }
@@ -2128,6 +2112,8 @@ window.__ModuleLoader__.load({
       var draftRef = React.useRef("");
       var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : null;
       if (inputState) draftRef.current = inputState.draft;
+        // 镜像输入框当前图片 id（供撤回/编辑发送时精确搬运）
+        try { if (Array.isArray(inputState.imageIds)) latestInputImageIds = inputState.imageIds.slice(); } catch (eMir) { /* ignore */ }
 
       // 灰字气泡的原文预览展开态（simple/info 模式点击切换）
       var previewState = React.useState(false);
