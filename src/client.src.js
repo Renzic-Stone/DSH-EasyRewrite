@@ -417,15 +417,25 @@ window.__ModuleLoader__.load({
             var attachEl = document.querySelector('[data-slot="conversation.input.attachments"]');
             var hasImages = !!(attachEl && attachEl.querySelector('img[src^="blob:"]'));
             var sEl = document.querySelector("[data-input-scroll]");
-            if (hasImages && cEl && cEl.parentNode) {
-              // 带图：外挂到 card 父级、card 之前（在图上方；避免插 React 节点内部干扰调和）
+            if (hasImages && cEl && cEl.parentNode && sEl) {
+              // 带图：外挂到 card 父级避 React 干扰，但用输入框滚动区矩形把左右边缘钉到与输入框重合；无分界线
               if (bar.parentNode !== cEl.parentNode) cEl.parentNode.insertBefore(bar, cEl);
-              bar.style.width = "100%";
+              var sr = sEl.getBoundingClientRect();
+              var pr = cEl.parentNode.getBoundingClientRect();
+              bar.style.width = sr.width + "px";
+              bar.style.marginLeft = Math.max(0, sr.left - pr.left) + "px";
+              bar.style.marginRight = "0px";
+              bar.style.borderBottom = "none";
+              bar.style.paddingBottom = "6px";
               bar.style.boxSizing = "border-box";
             } else if (sEl && sEl.parentNode) {
-              // 不带图：card 内部、文本输入区正上方（旧位置，视觉最贴合）
+              // 不带图：card 内部、文本输入区正上方（旧位置，含分界线）
               if (bar.parentNode !== sEl.parentNode) sEl.parentNode.insertBefore(bar, sEl);
               bar.style.width = "";
+              bar.style.marginLeft = "";
+              bar.style.marginRight = "";
+              bar.style.borderBottom = "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))";
+              bar.style.paddingBottom = "12px";
               bar.style.boxSizing = "";
             }
           } catch (e) { /* ignore */ }
