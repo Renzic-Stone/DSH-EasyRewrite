@@ -417,10 +417,10 @@ window.__ModuleLoader__.load({
             var attachEl = document.querySelector('[data-slot="conversation.input.attachments"]');
             var hasImages = !!(attachEl && attachEl.querySelector('img[src^="blob:"]'));
             var sEl = document.querySelector("[data-input-scroll]");
-            if (hasImages && cEl && cEl.parentNode && sEl) {
+            if (hasImages && sEl) {
               // 带图：fixed 锚定输入框滚动区实时矩形——左缘/右缘与输入框严格重合，位于其上方 2px；无分界线
-              if (bar.parentNode !== cEl.parentNode) cEl.parentNode.insertBefore(bar, cEl);
-              var sr = sEl.getBoundingClientRect();
+              // 带图：挂 document.body + fixed 锚定输入框实时矩形——任何 transform/filter 祖先都不会劫持定位
+              if (bar.parentNode !== document.body) document.body.appendChild(bar);
               bar.style.position = "fixed";
               bar.style.left = sr.left + "px";
               bar.style.width = sr.width + "px";
@@ -428,6 +428,7 @@ window.__ModuleLoader__.load({
               bar.style.marginLeft = "0px";
               bar.style.marginRight = "0px";
               bar.style.borderBottom = "none";
+              bar.style.zIndex = "9999";
               bar.style.paddingBottom = "6px";
               bar.style.boxSizing = "border-box";
             } else if (sEl && sEl.parentNode) {
