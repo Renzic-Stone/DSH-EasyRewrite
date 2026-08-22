@@ -414,33 +414,17 @@ window.__ModuleLoader__.load({
         function placeBar() {
           try {
             var cEl = document.querySelector('[data-composer-card="true"]') || null;
+            if (!cEl) return;
+            // 统一挂 card 首位：bar 宽度=card 内容区宽度 → 左右缘与输入框严格对齐；位于附件区/输入区上方
+            if (bar.parentNode !== cEl) cEl.insertBefore(bar, cEl.firstChild);
             var attachEl = document.querySelector('[data-slot="conversation.input.attachments"]');
             var hasImages = !!(attachEl && attachEl.querySelector('img[src^="blob:"]'));
-            var sEl = document.querySelector("[data-input-scroll]");
-            if (hasImages && cEl && cEl.parentNode) {
-              // 带图：外挂到 card 父级、card 之前（在图上方；避免插 React 节点内部干扰调和）
-              if (bar.parentNode !== cEl.parentNode) cEl.parentNode.insertBefore(bar, cEl);
-              bar.style.width = "100%";
-              bar.style.boxSizing = "border-box";
-              bar.style.position = "";      // 清理 fixed 实验残留
-              bar.style.zIndex = "";
-              bar.style.marginLeft = "";
-              bar.style.marginRight = "";
-              bar.style.top = "";
-              bar.style.left = "";
-              bar.style.borderBottom = "none";   // 带图：无分界线（用户规则）
-            } else if (sEl && sEl.parentNode) {
-              // 不带图：card 内部、文本输入区正上方（旧位置，视觉最贴合）
-              if (bar.parentNode !== sEl.parentNode) sEl.parentNode.insertBefore(bar, sEl);
-              bar.style.width = "";
-              bar.style.boxSizing = "";
-              bar.style.position = "";
-              bar.style.zIndex = "";
-              bar.style.marginLeft = "";
-              bar.style.marginRight = "";
-              bar.style.top = "";
-              bar.style.left = "";
+            if (hasImages) {
+              bar.style.borderBottom = "none";   // 带图：无分界线
+              bar.style.paddingBottom = "6px";
+            } else {
               bar.style.borderBottom = "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))";
+              bar.style.paddingBottom = "12px";
             }
           } catch (e) { /* ignore */ }
         }
