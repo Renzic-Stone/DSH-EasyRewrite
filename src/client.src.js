@@ -2625,7 +2625,18 @@ window.__ModuleLoader__.load({
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
-                ctxSessions: ctx.sessions
+                ctxSessions: ctx.sessions,
+                restoreSession: function (id) {
+                  return fetch("/bubble/unarchive", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ sessionId: id }),
+                    keepalive: true
+                  }).then(function (r) { return r.json(); }).then(function (d) {
+                    log("debug", "reset", "恢复完成（unarchive）", { sessionId: id, ok: !!(d && d.ok) });
+                    return !!(d && d.ok);
+                  }).catch(function () { return false; });
+                },
               };
             }
           }, UserBubbleView);
@@ -2642,6 +2653,17 @@ window.__ModuleLoader__.load({
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
                 ctxSessions: ctx.sessions
+                restoreSession: function (id) {
+                  return fetch("/bubble/unarchive", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ sessionId: id }),
+                    keepalive: true
+                  }).then(function (r) { return r.json(); }).then(function (d) {
+                    log("debug", "reset", "恢复完成（unarchive）", { sessionId: id, ok: !!(d && d.ok) });
+                    return !!(d && d.ok);
+                  }).catch(function () { return false; });
+                },
               };
             }
           }, RecallBanner);
