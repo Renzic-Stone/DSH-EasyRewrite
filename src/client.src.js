@@ -1680,11 +1680,18 @@ window.__ModuleLoader__.load({
                   var p2 = function (x) { return (x < 10 ? "0" : "") + x; };
                   return dd.getFullYear() + "-" + p2(dd.getMonth() + 1) + "-" + p2(dd.getDate()) + " " + p2(dd.getHours()) + ":" + p2(dd.getMinutes());
                 };
-                var chev = function (openState) { return React.createElement("span", { style: { flex: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "21.5px", width: "28px", height: "22px", color: "var(--dsw-alias-label-tertiary)" } }, openState ? "▾" : "▸"); };
+                // 折叠箭头：SVG 描边（官方图标同风格），像素级对齐、无字距
+                var chev = function (openState) {
+                  return React.createElement("svg", {
+                    width: "18", height: "18", viewBox: "0 0 24 24",
+                    style: { flex: "none", display: "block", color: "var(--dsw-alias-label-tertiary)", transform: openState ? "rotate(90deg)" : "rotate(0deg)", transition: "transform .12s" }
+                  }, React.createElement("path", { d: "M9 6l6 6-6 6", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }));
+                };
                 var rowHead = { display: "flex", alignItems: "center", gap: "6px", padding: "5px 4px", cursor: "pointer", borderRadius: "6px" };
+                var hdrRow = { display: "flex", alignItems: "center", cursor: "pointer" }; // 无 gap：SVG 箭头紧贴文字
                 // 层1：版本历史总折叠（默认收起）
                 return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px" } },
-                  React.createElement("div", { style: rowHead, onClick: function () { setHistOpen(!histOpen); } },
+                  React.createElement("div", { style: hdrRow, onClick: function () { setHistOpen(!histOpen); } },
                     chev(histOpen),
                     React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary)" } }, L.versionHistory),
                     React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", marginLeft: "auto" } }, families.length + "")
@@ -1692,10 +1699,10 @@ window.__ModuleLoader__.load({
                   histOpen ? families.map(function (fam) {
                     var open = !!famOpenMap[fam.rootId];
                     return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "2px", padding: "2px 0 2px 12px", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.14))" } },
-                      React.createElement("div", { style: rowHead, onClick: function () { var nm = {}; for (var ok2 in famOpenMap) nm[ok2] = famOpenMap[ok2]; nm[fam.rootId] = !open; setFamOpenMap(nm); } },
+                      React.createElement("div", { style: hdrRow, onClick: function () { var nm = {}; for (var ok2 in famOpenMap) nm[ok2] = famOpenMap[ok2]; nm[fam.rootId] = !open; setFamOpenMap(nm); } },
                         chev(open),
                         React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, famName(fam)),
-                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", flex: "none" } }, fam.versions.length + " " + L.versionCount)
+                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", flex: "none", marginLeft: "auto" } }, fam.versions.length + " " + L.versionCount)
                       ),
                       open ? fam.versions.map(function (vid, vi) {
                         return React.createElement("div", { key: vid, style: rowHead },
