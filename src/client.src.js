@@ -763,13 +763,14 @@ window.__ModuleLoader__.load({
           ia.setDraft(r.draftText);
           log("info", "recall", "resume：回填草稿并自动发送", { sessionId: sessionId });
           var doSubmit = function () { setTimeout(function () { try { ia.submit(); } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); } }, 60); };
-          // 图片桥接（review #3）：官方 draftAttachments 全局单例跨会话存活——resume 只搬 imageIds；
           // 图片桥接（review #3 简化版）：官方 draftAttachments 全局单例跨会话存活——
           // resume 直接 addImages(发送瞬间的 imageIds) 后 submit；消息内容完全由我们构造，无需校验。
           var savedIds = Array.isArray(r.imageIds) ? r.imageIds : [];
           if (savedIds.length > 0 && typeof ia.addImages === "function") {
             try { ia.addImages(savedIds); } catch (e) { log("warn", "attach", "addImages 异常（忽略，文字照发）", { err: String(e && e.message ? e.message : e) }); }
           }
+          doSubmit();
+        }
       }, [sessionId, resumeKey]);
 
       return null; // 纯 DOM 注入，槽位不渲染内容
