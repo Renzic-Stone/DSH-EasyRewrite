@@ -1055,7 +1055,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "回填",
         sectionVersions: "版本",
         versionFamilies: "版本家族（撤回/编辑重发）",
-        versionHistory: "版本历史",
+        versionHistory: "版本历史（点击展开可手动恢复历史版本）",
         versionFamilyNone: "暂无版本家族",
         versionRestoreOpen: "恢复并打开",
         versionCount: "个版本"
@@ -1133,7 +1133,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "Composer fill",
         sectionVersions: "Versions",
         versionFamilies: "Version families (recall/edit resends)",
-        versionHistory: "Version history",
+        versionHistory: "Version history (click to expand and restore past versions)",
         versionFamilyNone: "None yet",
         versionRestoreOpen: "Restore & open",
         versionCount: "versions"
@@ -1211,7 +1211,7 @@ window.__ModuleLoader__.load({
         sectionComposer: "入力欄",
         sectionVersions: "バージョン",
         versionFamilies: "バージョンファミリー（撤回/編集再送）",
-        versionHistory: "バージョン履歴",
+        versionHistory: "バージョン履歴（クリックで展開し過去バージョンを復元）",
         versionFamilyNone: "まだありません",
         versionRestoreOpen: "復元して開く",
         versionCount: "バージョン"
@@ -1660,7 +1660,6 @@ window.__ModuleLoader__.load({
             // 版本历史（三层折叠）：总开关默认收起 → 按对话名的家族折叠项 → 条目显最后对话时间
             // （官方无归档恢复入口，此处保留恢复并打开；review #6 后家族来自官方 lineage）
             React.createElement("div", { style: groupStyle },
-              React.createElement("span", { style: labelStyle }, L.versionFamilies),
               (function () {
                 var families = listVersionFamilies(props.ctxSessions);
                 if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
