@@ -2,6 +2,11 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.2] — 紧凑/标准档高度修正
+
+- 编辑框行数下限 3 行 → **1 行**：短消息打开编辑框不再凭空多出几行——严格贴合原气泡大小
+- 删除 textarea 最小高度 44px；输入时高度实时自适应内容（换行/删除即时跟随）
+
 ## [2.0.1] — 编辑宽度三档手感修正
 
 - 紧凑（compact）：严格以气泡原宽起步——打开编辑框不再改变当前大小；随打字按内容需要慢慢扩大（上限 360px）
