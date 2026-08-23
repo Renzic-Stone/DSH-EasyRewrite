@@ -2,6 +2,13 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.1] — 编辑宽度三档手感修正
+
+- 紧凑（compact）：严格以气泡原宽起步——打开编辑框不再改变当前大小；随打字按内容需要慢慢扩大（上限 360px）
+- 标准（standard）：与紧凑唯一区别——内容不满一行时自动扩成一行宽
+- 两档超过一行后保持宽度不再主动扩张（高度自然换行）
+- 内容宽度估算改为 CJK 感知（全角 ≈14px / 半角 ≈8px），中文场景"跟随打字扩大"不再滞后
+
 ## [2.0.0] — 大规模重构 · 带图片消息 Rewrite 完整支持
 
 ### 🚀 大规模重构
