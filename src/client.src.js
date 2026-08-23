@@ -2291,6 +2291,8 @@ window.__ModuleLoader__.load({
           }
           // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
           // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
+          // 诊断：dump content 块类型
+          try { log("info", "attach", "content 块诊断", { total: (data && Array.isArray(data.content)) ? data.content.length : -1, types: (data && Array.isArray(data.content)) ? data.content.map(function(b){ return b ? (b.type + (b.attachment ? "+att(" + (b.attachment.attachmentId || "no-id") + ")" : "+no-att")) : "null"; }).join(",") : "N/A" }); } catch(eD) {}
           var attachRefs = [];
           try {
             if (data && Array.isArray(data.content)) {
