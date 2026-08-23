@@ -28,7 +28,8 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - Click the bubble → inline editor (original Markdown source preserved), Esc cancels / Ctrl+Enter confirms.
 - **Three editable widths** (Compact: starts at bubble width, up to 360px / Standard: fixed 360px / Expanded: 748px), auto-grow + inner scroll.
 - Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend: truncate → archive original → same-titled session → edited text sent automatically.
-- Edit drafts persist per session (survive tab switch / refresh); **attachment-preserving resend** — images survive edit-resends together with the modified text.
+- Edit drafts persist per session (survive tab switch / refresh).
+- **Full image support for Rewrite via the recall key**: on confirm, image previews go straight into the composer — delete or add freely, then send together with your edited text. No comparable feature in any competitor. (Bubble-edit image support lands in the next release.)
 
 ### Settings — shipped (M3)
 - **Settings → Plugins → Plugin config**: an official-style collapsible card (click the header to expand/collapse); UI language follows the interface (中文 / English / 日本語).

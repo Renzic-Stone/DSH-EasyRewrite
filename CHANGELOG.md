@@ -2,6 +2,26 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] — 大规模重构 · 带图片消息 Rewrite 完整支持
+
+### 🚀 大规模重构
+- 重构核心代码逻辑与数据流：极大减少性能开支和自有库依赖——更轻、更快、更好用
+- 移除多套自建冗余机制（内存缓存 / DOM 扫描 / 中转路由），全面改用 DSH 官方原生通道
+
+### 🖼️ 带图片消息 Rewrite 完整支持（撤回键路径）
+- 确认后图片预览直接进入输入框：可删除、可新增
+- 发送时精确跟随你的最终选择，与修改后的文本一并发出
+- 目前市面竞品完全无同类功能
+
+### ⚠️ 已知限制
+- 气泡框编辑暂不支持带图消息（将在下个版本补齐）
+
+### 其他
+- 完成 dsh 0.1.1-rc.2 适配核查（支持新多模态模型 DeepSeek-V4-Flash-Vision-Exp）
+- 设置页「版本家族」改三层折叠：按对话名分组、条目显示最后对话时间
+- 折叠箭头更换为官方风格 SVG 描边图标
+
+
 ## [1.3.6] — 修复 VersionPager 重复 L hook（React #300 复发）
 
 - 长对话场景下 `conversation.chat.assistant-actions` 槽再次崩溃（React #300）：VersionPager 内 `useUILocaleDict()` 残留两份——顶部 hooks 区一份（正确）+ 两个 return null 之后又一份（历史修复残留）→ 渲染路径 hooks 数量 3 vs 4 漂移
