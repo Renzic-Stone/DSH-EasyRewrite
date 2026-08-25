@@ -802,6 +802,45 @@ window.__ModuleLoader__.load({
         }
       }, [sessionId, resumeKey]);
 
+      // ---- 编辑态：document 级捕获拦截拖入/粘贴图片（阻止漏到官方输入框），随编辑态启停 ----
+      React.useEffect(function () {
+        if (!editing) return;
+        var intercept = function (e) {
+          e.preventDefault(); e.stopPropagation();
+          if (e.type !== "drop") return;
+          try {
+            var imgFiles = [];
+            var dt = e.dataTransfer;
+            if (dt && dt.files) {
+              for (var di = 0; di < dt.files.length; di++) {
+                var df = dt.files[di];
+                if (df.type && df.type.indexOf("image") === 0) imgFiles.push(df);
+              }
+            }
+            if (dt && dt.items) {
+              for (var dj = 0; dj < dt.items.length; dj++) {
+                var itm = dt.items[dj];
+                if (itm.kind === "file" && itm.type && itm.type.indexOf("image") === 0) {
+                  var gf = itm.getAsFile();
+                  if (gf && imgFiles.indexOf(gf) === -1) imgFiles.push(gf);
+                }
+              }
+            }
+            if (imgFiles.length > 0 && ctxConversationRef && typeof ctxConversationRef.createDraftImages === "function") {
+              var dImgs = ctxConversationRef.createDraftImages(imgFiles);
+              setEditImages(function (prev) { return prev.concat(dImgs.map(function (im) { return { id: im.id, url: im.previewUrl }; })); });
+              log("info", "edit", "拦截到拖入图片", { count: dImgs.length });
+            }
+          } catch (eDr) { log("warn", "edit", "拖入拦截异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); }
+        };
+        document.addEventListener("drop", intercept, true);
+        document.addEventListener("dragover", function (e) { e.preventDefault(); }, true);
+        return function () {
+          document.removeEventListener("drop", intercept, true);
+          document.removeEventListener("dragover", function (e) { e.preventDefault(); }, true);
+        };
+      }, [editing]);
+
       return null; // 纯 DOM 注入，槽位不渲染内容
     }
 
