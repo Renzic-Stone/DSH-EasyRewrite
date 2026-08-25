@@ -2339,7 +2339,6 @@ window.__ModuleLoader__.load({
           // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
           // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
           // 诊断：dump content 块类型
-          try { var _dk = data ? Object.keys(data).join(",") : "data-null"; var _ct = data ? data.content : "no-content-prop"; var _ctType = typeof _ct; var _ctIsArr = Array.isArray(_ct); var _ctLen = _ctIsArr ? _ct.length : -1; var _sample = _ctIsArr && _ct.length > 0 ? JSON.stringify(_ct[0]).slice(0, 200) : String(_ct).slice(0, 100); log("info", "attach", "content诊断", { dataKeys: _dk, contentType: _ctType, isArr: _ctIsArr, len: _ctLen, sample: _sample }); } catch(eD) { log("warn", "attach", "诊断异常", { err: String(eD) }); }
           var editImgIds = editImages.map(function(x) { return x.id; });
           setEditing(false);
           log("info", "edit", "确定：编辑重发", { sessionId: sid, targetSeq: realSeq, len: newText.length });
