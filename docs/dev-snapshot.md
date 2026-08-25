@@ -29,6 +29,8 @@
 - v2.0.0 公告已发 Dis (#3456)
 - v2.0.2 更新公告已发 Dis (#3456)
 - Day 4 增长日报已发 Dis (#3456)
+- Day 5 增长日报（08-24 补发）已发 Dis (#3456)，discussioncomment-18152393
+- Day 6 增长日报（08-25 补发）已发 Dis (#3456)，discussioncomment-18152397
 
 ---
 
@@ -102,13 +104,13 @@
 - 大事记: docs/easyrewrite-chronicle.md
 - 升级核查: docs/dsh-rc2-upgrade-check.md
 
-## 数据现状
+## 数据现状（2026-08-26 凌晨更新）
 
-- GitHub: 41⭐ / 3 forks
-- npm latest: 2.0.2（v2.1 未发布，等测试确认）
-- Discussion #3456: Day 4 日报已发（41⭐ +15）
-- 收录 PR: AdamPlatin123 #271 ✅ bruc3van #103 ✅ 其余待合并
-- 竞品头部: undo-savepoint 115⭐ / turn-rewind 96⭐
+- GitHub: 74⭐ / 8 forks；按日增量 08-24 +10、08-25 +15
+- npm latest: 2.1.0（08-23 02:02 发布）；08-24 单日下载 124
+- Discussion #3456: Day 5 / Day 6 日报已补发；注意 Day 3 评论存在重复（两条，待用户决定是否删）
+- 收录 PR: AdamPlatin123 ✅ bruc3van ✅ beancookie ✅ Anil-matcha #72 ✅(08-25)；kejixiaoliang/billLiao 关闭未合并；Alex-Yanggg #89 open；WhaleHub issue 已关闭；dshget-data open
+- 竞品头部: undo-savepoint 127⭐ / turn-rewind 99⭐（我们 74⭐ 同类第三）
 
 ## 下一步（按优先级）
 
