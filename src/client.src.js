@@ -2167,11 +2167,12 @@ window.__ModuleLoader__.load({
       document.body.removeChild(ta);
     }
 
-    /** 编辑态模型选择（v2.2.1）：使用官方 DisclosureRow 折叠组件（与插件设置卡同源同款）。
-     * 展开后面板**向下顺流撑开**——不盖住任何文字；内嵌两行官方折叠：模型 / 推理等级。
-     * 数据源 = 官方 modelDirectories.directoryFor(sessionId).store，与下方输入框同源；
-     * 惰性提交：选择只写本地状态，点确定才随 resume 应用，不碰官方 store；
-     * 服务不可用 / 会话不可寻址 → 整个组件不渲染；模型无 reasoning 能力隐藏「推理等级」行。 */
+    /** 编辑态模型选择 chip（v2.2）：复刻官方输入框模型选择的两级菜单（模型 / 推理等级）。
+     * 数据源=官方 modelDirectories.directoryFor(sessionId).store——与下方输入框同源同款；
+     * 惰性提交：选择只写本地 selection，确定发送时才随 resume 应用，不碰官方 store；
+     * 面板**向下弹出**（不盖上方文字）；箭头=设置卡同款 SVG 无柄箭头（收起朝下⇄展开朝上旋转动画）；
+     * 服务不可用 / 会话不可寻址时整颗 chip 不渲染（优雅降级）；
+     * 模型无 reasoning 能力 → 菜单不出现「推理等级」行，chip 也不显示等级。 */
     function EditModelPicker(props) {
       var L = useUILocaleDict();
       var dir = null;
@@ -2184,22 +2185,26 @@ window.__ModuleLoader__.load({
         hasStore ? function (cb) { return dir.store.subscribe(cb); } : function () { return function () {}; },
         hasStore ? function () { return dir.store.getSnapshot(); } : function () { return null; }
       );
-      var openState = React.useState(false);
-      var open = openState[0];
-      var setOpen = openState[1];
-      var modelsOpenState = React.useState(false);
-      var modelsOpen = modelsOpenState[0];
-      var setModelsOpen = modelsOpenState[1];
-      var effortsOpenState = React.useState(false);
-      var effortsOpen = effortsOpenState[0];
-      var setEffortsOpen = effortsOpenState[1];
+      var menuState = React.useState(false);
+      var menuOpen = menuState[0];
+      var setMenuOpen = menuState[1];
+      var viewState = React.useState("root");
+      var view = viewState[0];
+      var setView = viewState[1];
+      var rootRef = React.useRef(null);
       React.useEffect(function () {
-        if (!open || !dir || typeof dir.load !== "function") return;
+        if (!menuOpen || !dir || typeof dir.load !== "function") return;
         try { dir.load().catch(function () { /* ignore */ }); } catch (eLoad) { /* ignore */ }
-      }, [open]);
+      }, [menuOpen]);
+      React.useEffect(function () {
+        if (!menuOpen) return;
+        function onDocClick(e) {
+          try { if (rootRef.current && !rootRef.current.contains(e.target)) { setMenuOpen(false); setView("root"); } } catch (eOut) { /* ignore */ }
+        }
+        document.addEventListener("click", onDocClick, true);
+        return function () { document.removeEventListener("click", onDocClick, true); };
+      }, [menuOpen]);
       if (!hasStore || !snap) return null;
-      var Disclosure = Primitives.DisclosureRow;
-      if (typeof Disclosure !== "function") return null; // 官方组件缺失 → 优雅降级
       var groups = Array.isArray(snap.groups) ? snap.groups : [];
       var cur = snap.current || null;
       var sel = props.selection || (cur ? { provider: cur.provider, model: cur.model, reasoningEffort: cur.reasoningEffort } : null);
@@ -2226,79 +2231,97 @@ window.__ModuleLoader__.load({
         effortLabel = (lvFound && lvFound.name) || String(effectiveEffort);
       }
       var modelLabel = (selChoice && selChoice.model.name) ? selChoice.model.name : (sel ? sel.model : L.modelMenu);
-      function pickModel(gid, modelId) { props.onChange({ provider: gid, model: modelId }); }
+      function pickModel(gid, modelId) {
+        props.onChange({ provider: gid, model: modelId });
+        setMenuOpen(false); setView("root");
+      }
       function pickEffort(effort) {
         var base = sel || (cur ? { provider: cur.provider, model: cur.model } : null);
         if (!base) return;
         var next = { provider: base.provider, model: base.model };
         if (effort !== void 0) next.reasoningEffort = effort;
         props.onChange(next);
+        setView("root");
       }
       var hoverBg = "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12))";
-      var rowBase = { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px", width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "7px 10px", borderRadius: "8px", font: "inherit", fontSize: "13px", lineHeight: "20px", color: "var(--dsw-alias-label-primary)", textAlign: "left" };
+      var chipStyle = { display: "inline-flex", alignItems: "center", gap: "6px", border: "none", background: "transparent", cursor: "pointer", padding: "4px 8px", borderRadius: "8px", font: "inherit", fontSize: "13px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)" };
+      // 向下弹出（不盖上方文字）；浮层不占布局——取消/确定按键不受任何影响
+      var menuStyle = { position: "absolute", top: "calc(100% + 8px)", left: "0", minWidth: "250px", maxWidth: "330px", maxHeight: "320px", overflowY: "auto", background: "var(--dsw-alias-bg-layer-3, rgba(42,42,46,0.98))", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.25))", borderRadius: "12px", boxShadow: "0 8px 24px rgba(0,0,0,0.35)", padding: "6px", zIndex: 60 };
+      var rowBase = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "8px 10px", borderRadius: "8px", font: "inherit", fontSize: "13px", lineHeight: "20px", color: "var(--dsw-alias-label-primary)", textAlign: "left" };
       function rowHover(e, on) { try { e.currentTarget.style.background = on ? hoverBg : "transparent"; } catch (eH) { /* ignore */ } }
-      var check = React.createElement("span", { style: { color: "var(--dsw-alias-label-primary)", flex: "none", alignSelf: "center" } }, "✓");
-      var blankIcon = React.createElement("span", { style: { display: "inline-block", width: "14px" } });
-      var modelRows = [];
-      for (var gi2 = 0; gi2 < groups.length; gi2++) {
-        var g2 = groups[gi2];
-        if (groups.length > 1 && g2.name) modelRows.push(React.createElement("div", { key: "g" + gi2, style: { padding: "6px 10px 2px", fontSize: "11px", color: "var(--dsw-alias-label-tertiary)" } }, g2.name));
-        var g2m = Array.isArray(g2.models) ? g2.models : [];
-        for (var mj = 0; mj < g2m.length; mj++) {
-          (function (gid, model) {
-            var selected = !!(sel && gid === sel.provider && model.id === sel.model);
-            modelRows.push(React.createElement("button", { key: gid + ":" + model.id, type: "button", role: "menuitemradio", "aria-checked": selected, title: model.name, style: rowBase, onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); pickModel(gid, model.id); } },
-              React.createElement("span", { style: { display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" } },
-                React.createElement("span", null, model.name),
-                model.description ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", lineHeight: "16px" } }, model.description) : null),
-              selected ? check : null));
-          })(g2.id, g2m[mj]);
-        }
+      function menuRow(label, value, onClick, key) {
+        return React.createElement("button", { key: key, type: "button", style: rowBase, onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); onClick(); } },
+          React.createElement("span", null, label),
+          React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px", color: "var(--dsw-alias-label-tertiary)" } },
+            React.createElement("span", null, value),
+            React.createElement("span", null, "›")));
       }
-      var effortRows = [];
-      if (reasoning !== void 0) {
+      function backRow(label) {
+        return React.createElement("button", { key: "back", type: "button", style: Object.assign({}, rowBase, { color: "var(--dsw-alias-label-tertiary)", fontSize: "12px" }), onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); setView("root"); } },
+          React.createElement("span", null, "‹ " + label));
+      }
+      var check = React.createElement("span", { style: { color: "var(--dsw-alias-label-primary)", flex: "none" } }, "✓");
+      // 设置卡同款 SVG 无柄箭头：收起朝下（rotate 90°）⇄ 展开朝上（rotate 270°），官方旋转动画
+      var chevron = React.createElement("svg", {
+        width: "14", height: "14", viewBox: "0 0 24 24", "aria-hidden": true,
+        style: { color: "var(--dsw-alias-label-tertiary)", flex: "none", transition: "transform .16s", transform: menuOpen ? "rotate(270deg)" : "rotate(90deg)" }
+      }, React.createElement("path", { d: "M9 6l6 6-6 6", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }));
+      var body;
+      if (view === "root") {
+        body = [
+          menuRow(L.modelMenu, modelLabel, function () { setView("models"); }, "row-model"),
+          reasoning ? menuRow(L.effortMenu, effortLabel || L.effortDefault, function () { setView("efforts"); }, "row-effort") : null
+        ];
+      } else if (view === "models") {
+        var kids = [backRow(L.modelMenu)];
+        for (var gi2 = 0; gi2 < groups.length; gi2++) {
+          var g2 = groups[gi2];
+          if (groups.length > 1 && g2.name) kids.push(React.createElement("div", { key: "g" + gi2, style: { padding: "6px 10px 2px", fontSize: "11px", color: "var(--dsw-alias-label-tertiary)" } }, g2.name));
+          var g2m = Array.isArray(g2.models) ? g2.models : [];
+          for (var mj = 0; mj < g2m.length; mj++) {
+            (function (gid, model) {
+              var selected = !!(sel && gid === sel.provider && model.id === sel.model);
+              kids.push(React.createElement("button", { key: gid + ":" + model.id, type: "button", role: "menuitemradio", "aria-checked": selected, title: model.name, style: Object.assign({}, rowBase, { alignItems: "flex-start" }), onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); pickModel(gid, model.id); } },
+                React.createElement("span", { style: { display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" } },
+                  React.createElement("span", null, model.name),
+                  model.description ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", lineHeight: "16px" } }, model.description) : null),
+                selected ? check : null));
+            })(g2.id, g2m[mj]);
+          }
+        }
+        body = groups.length === 0
+          ? [backRow(L.modelMenu), React.createElement("div", { key: "empty", style: { padding: "10px", fontSize: "12px", color: "var(--dsw-alias-label-tertiary)" } }, snap.status === "loading" ? L.modelsLoading : L.modelsEmpty)]
+          : kids;
+      } else {
         var effortChoices = [];
-        if (reasoning.defaultEffort === void 0) effortChoices.push({ effort: void 0, label: L.effortDefault });
-        var eList = Array.isArray(reasoning.efforts) ? reasoning.efforts : [];
-        for (var ei = 0; ei < eList.length; ei++) effortChoices.push({ effort: eList[ei].id, label: eList[ei].name });
+        if (reasoning !== void 0) {
+          if (reasoning.defaultEffort === void 0) effortChoices.push({ effort: void 0, label: L.effortDefault });
+          var eList = Array.isArray(reasoning.efforts) ? reasoning.efforts : [];
+          for (var ei = 0; ei < eList.length; ei++) effortChoices.push({ effort: eList[ei].id, label: eList[ei].name });
+        }
+        var eKids = [backRow(L.effortMenu)];
         for (var ej = 0; ej < effortChoices.length; ej++) {
           (function (level) {
             var selected = level.effort === effectiveEffort;
-            effortRows.push(React.createElement("button", { key: String(level.effort), type: "button", role: "menuitemradio", "aria-checked": selected, style: rowBase, onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); pickEffort(level.effort); } },
+            eKids.push(React.createElement("button", { key: String(level.effort), type: "button", role: "menuitemradio", "aria-checked": selected, style: Object.assign({}, rowBase), onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); }, onClick: function (e) { e.stopPropagation(); pickEffort(level.effort); } },
               React.createElement("span", null, level.label),
               selected ? check : null));
           })(effortChoices[ej]);
         }
+        body = eKids;
       }
-      return React.createElement("div", { style: { flex: "1 1 auto", minWidth: "0", maxWidth: "380px" } },
-        React.createElement(Disclosure, {
-          open: open,
-          expandable: true,
-          expandOnRowClick: true,
-          keepContentWhenOpen: true,
-          onToggle: function () { setOpen(!open); },
-          icon: blankIcon,
-          title: React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", lineHeight: "18px", minWidth: "0" } },
-            React.createElement("span", { style: { fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, modelLabel),
-            effortLabel ? React.createElement("span", { style: { color: "var(--dsw-alias-label-tertiary)", fontWeight: 400, flex: "none" } }, effortLabel) : null)
+      return React.createElement("div", { ref: rootRef, style: { position: "relative", display: "inline-block" } },
+        React.createElement("button", {
+          type: "button", style: chipStyle, title: L.modelMenu + "：" + modelLabel + (effortLabel ? " · " + effortLabel : ""),
+          "aria-haspopup": "menu", "aria-expanded": !!menuOpen,
+          onMouseEnter: function (e) { rowHover(e, true); }, onMouseLeave: function (e) { rowHover(e, false); },
+          onClick: function (e) { e.stopPropagation(); setMenuOpen(!menuOpen); setView("root"); }
         },
-          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px", padding: "2px 0 6px" } },
-            groups.length === 0
-              ? React.createElement("div", { style: { padding: "6px 10px", fontSize: "12px", color: "var(--dsw-alias-label-tertiary)" } }, snap.status === "loading" ? L.modelsLoading : L.modelsEmpty)
-              : React.createElement(Disclosure, {
-                  icon: blankIcon,
-                  title: L.modelMenu, open: modelsOpen, expandable: true, expandOnRowClick: true, keepContentWhenOpen: true,
-                  onToggle: function () { setModelsOpen(!modelsOpen); }
-                },
-                  React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "1px", padding: "2px 0 4px" } }, modelRows)),
-            reasoning ? React.createElement(Disclosure, {
-                  icon: blankIcon,
-                  title: L.effortMenu + "：" + (effortLabel || L.effortDefault), open: effortsOpen, expandable: true, expandOnRowClick: true, keepContentWhenOpen: true,
-                  onToggle: function () { setEffortsOpen(!effortsOpen); }
-                },
-                  React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "1px", padding: "2px 0 4px" } }, effortRows)) : null
-          )
-        )
+          React.createElement("span", { style: { fontWeight: 600 } }, modelLabel),
+          effortLabel ? React.createElement("span", { style: { color: "var(--dsw-alias-label-tertiary)" } }, effortLabel) : null,
+          chevron
+        ),
+        menuOpen ? React.createElement("div", { role: "menu", style: menuStyle, onClick: function (e) { e.stopPropagation(); } }, body) : null
       );
     }
 
