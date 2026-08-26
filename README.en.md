@@ -29,7 +29,7 @@ Click your own message bubble to edit it in place; hit the recall button beside 
 - **Three editable widths** (Compact: starts at bubble width, up to 360px / Standard: fixed 360px / Expanded: 748px), auto-grow + inner scroll.
 - Edit mode keeps the recall key (hides copy); **Confirm** = truncate-style edit-resend: truncate → archive original → same-titled session → edited text sent automatically.
 - Edit drafts persist per session (survive tab switch / refresh).
-- **Full image support for Rewrite — recall key & bubble edit**: images send together with your edited text; inside bubble edit you can delete (×), paste or drag-and-drop new images, and your edit progress survives a page refresh. No comparable feature in any competitor.
+- **Full image support for Rewrite — recall key & bubble edit**: images send together with your edited text; inside bubble edit you can delete (×), paste or drag-and-drop new images, switch model & reasoning effort on the spot, and your edit progress survives a page refresh. No comparable feature in any competitor.
 
 ### Settings — shipped (M3)
 - **Settings → Plugins → Plugin config**: an official-style collapsible card (click the header to expand/collapse); UI language follows the interface (中文 / English / 日本語).
