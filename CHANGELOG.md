@@ -2,6 +2,11 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.3.1] — 🚨 修复 dsh 0.1.0-rc.6 安装后白屏（P0）
+
+### 修复
+- **修复 dsh 0.1.0-rc.6 上安装后 Web 白屏**：`settings.plugin.item` 槽位注册同时提供 `key` 与 `id`——rc.6 该槽为 list 类型校验（要求 `options.id`，缺失即 loader apply 失败→白屏），rc.7+ 为 keyed 类型（要求 `options.key`）；此前只写 `key` 在 rc.6 必然注册失败（issue #4）
+
 ## [2.3.0] — 🎛️ 气泡框编辑模型切换 · 操作动线精简
 
 ### 新功能
