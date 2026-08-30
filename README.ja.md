@@ -4,7 +4,7 @@
 <img src="https://raw.githubusercontent.com/Renzic-Stone/DSH-EasyRewrite/main/assets/logo.png" alt="dsh-easyrewrite" width="320" />
 </picture>
 
-# dsh-easyrewrite（DSH-EasyRewrite）
+# DSH-EasyRewrite
 
 [中文](README.md) | [English](README.en.md)
 
