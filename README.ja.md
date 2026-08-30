@@ -9,6 +9,14 @@
 
 [中文](README.md) | [English](README.en.md)
 
+<div align="center">
+  <a href="https://www.npmjs.com/package/dsh-easyrewrite"><img src="https://img.shields.io/npm/v/dsh-easyrewrite?style=flat-square&label=npm&color=4d6bfe" alt="npm version"></a>
+  <a href="https://github.com/Renzic-Stone/DSH-EasyRewrite/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Renzic-Stone/DSH-EasyRewrite?style=flat-square&label=license" alt="license"></a>
+  <a href="https://github.com/Renzic-Stone/DSH-EasyRewrite/stargazers"><img src="https://img.shields.io/github/stars/Renzic-Stone/DSH-EasyRewrite?style=flat-square&label=stars&color=f1c40f" alt="stars"></a>
+  <a href="https://www.npmjs.com/package/dsh-easyrewrite"><img src="https://img.shields.io/npm/dm/dsh-easyrewrite?style=flat-square&label=downloads&color=2ea44f" alt="downloads"></a>
+</div>
+
+
 `#dsh` `#deepseek-harness` `#撤回` `#バブル編集` `#取り消し` `#バージョンページャー` `#i18n` `#多言語`
 
 **DeepSeek Harness Web で自分のメッセージをインライン編集・撤回——遅延・シームレス・データ損失ゼロ。**
