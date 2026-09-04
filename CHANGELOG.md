@@ -2,6 +2,21 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [2.4.0] — 适配 dsh 0.1.2 · API 适配层重构（未发布，开发中）
+
+### ⚠️ 宿主要求
+- **本版本要求 dsh 0.1.2-rc.1+**，不再兼容 dsh 0.1.1-rc.2 及更早宿主——0.1.1-rc.2 用户请停留 **2.3.1**（该线最终版）
+
+### 适配
+- 会话快照访问迁移至新一代会话架构（useChat）
+- 图片 URL 解析通道迁移（imageUrl）
+- Workspace 导航迁移（uiWorkspace）
+- 模型切换、图片桥接、版本翻页器全链路已迁移至新 API；优化 API 相关算法，适配层全面重构
+
+### 更新块
+- "每日检查更新"首次启动时弹一次性强提醒（建议开启）
+- 版本检测扩展：dsh 宿主版本过低时提醒升级 dsh 并附一键复制命令
+
 ## [2.3.1] — 🚨 修复 dsh 0.1.0-rc.6 安装后白屏（P0）
 
 ### 修复
