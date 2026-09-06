@@ -18,7 +18,7 @@
 
 Click your own message bubble to edit it in place; hit the recall button beside copy to withdraw it and everything after it. Nothing is ever really changed until you commit — the conversation, the model context, and the session log stay untouched until you press **Confirm** (rewrite) or **Send** (recall).
 
-> Compatible with DeepSeek Harness Web (rc.6+, built on official extension points only — no source patches).
+> Compatible with DeepSeek Harness Web (**2.4.0 requires dsh 0.1.2-rc.1+**; for older hosts use the 2.3.1 final release). Built on official extension points only — no source patches.
 
 ---
 

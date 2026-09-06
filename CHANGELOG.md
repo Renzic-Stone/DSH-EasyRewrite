@@ -2,7 +2,7 @@
 
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [2.4.0] — 适配 dsh 0.1.2 · API 适配层重构（未发布，开发中）
+## [2.4.0] — 适配 dsh 0.1.2 · API 适配层重构
 
 ### ⚠️ 宿主要求
 - **本版本要求 dsh 0.1.2-rc.1+**，不再兼容 dsh 0.1.1-rc.2 及更早宿主——0.1.1-rc.2 用户请停留 **2.3.1**（该线最终版）
