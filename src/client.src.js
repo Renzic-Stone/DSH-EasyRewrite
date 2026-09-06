@@ -2421,7 +2421,7 @@ window.__ModuleLoader__.load({
       );
     }
 
-    /** 撤回待定态展开原文时的单张图片（v2.4.0）：loadImage 异步解析→<img>；失败静默。 */
+    /** 撤回待定态展开原文时的单张图片（v2.4.0）：loadImage 异步解析→<img>；圆角+气泡同宽约束，复刻原生气泡内图片观感；失败静默。 */
     function PendingOriginalImage(props2) {
       var st = React.useState(null);
       var url = st[0];
@@ -2431,11 +2431,11 @@ window.__ModuleLoader__.load({
       var setFailed = errState[1];
       React.useEffect(function () {
         var alive = true;
-        props.loadImage(props2.ref).then(function (u) { if (alive && u) setUrl(u); }, function () { if (alive) setFailed(true); });
+        props2.loadImage(props2.ref).then(function (u) { if (alive && u) setUrl(u); }, function () { if (alive) setFailed(true); });
         return function () { alive = false; };
       }, []);
       if (failed || !url) return null;
-      return React.createElement("img", { src: url, style: { maxWidth: "200px", maxHeight: "150px", borderRadius: "8px", display: "block" } });
+      return React.createElement("img", { src: url, style: { maxWidth: "100%", width: "auto", maxHeight: "280px", borderRadius: "12px", display: "block" } });
     }
 
     function UserBubbleView(props) {
@@ -2708,36 +2708,43 @@ window.__ModuleLoader__.load({
           whiteSpace: "pre-wrap",
           wordBreak: "break-word"
         };
+        var togglePreview = function (e) { e.stopPropagation(); setShowPreview(!showPreview); };
+        // v2.4.0：展开态复刻原生结构——图片（独立元素，原生观感）在上 + 文字独立灰字气泡在下；无大一统灰底
+        var origImages = null;
+        if (showPreview && showOriginalImages()) {
+          try {
+            var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
+            if (refs.length > 0) {
+              if (typeof props.renderMessageImages === "function") {
+                var imgs = refs.map(function (r2) { return { attachment: r2 }; });
+                origImages = React.createElement("div", { key: "orig-images", onClick: togglePreview, style: { cursor: "pointer" } },
+                  renderMessageImagesCompat(imgs, props));
+              } else if (typeof props.loadImage === "function") {
+                origImages = React.createElement("div", { key: "orig-images-self", onClick: togglePreview, style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px", cursor: "pointer" } },
+                  refs.map(function (r3, ri3) {
+                    return React.createElement(PendingOriginalImage, { key: ri3, ref: r3, loadImage: props.loadImage });
+                  }));
+              }
+            }
+          } catch (eOi) { origImages = null; }
+        }
         return React.createElement(
           "div", { style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", padding: "2px 0" }, "data-dsh-easyrewrite": "user-pending" },
-          React.createElement(
+          showPreview ? origImages : null,
+          showPreview ? React.createElement(
             "div", {
               style: grayBubbleStyle,
-              title: showPreview ? L.collapse : L.viewOriginal,
-              onClick: function (e) { e.stopPropagation(); setShowPreview(!showPreview); }
+              title: L.collapse,
+              onClick: togglePreview
             },
-            showPreview ? [
-              (showOriginalImages() && (function () {
-                // v2.4.0：展开原文时渲染该消息的图片——双通道（rc.2 renderMessageImages prop / rc.1 loadImage+自绘img）
-                try {
-                  var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
-                  if (refs.length === 0) return null;
-                  if (typeof props.renderMessageImages === "function") {
-                    var imgs = refs.map(function (r2) { return { attachment: r2 }; });
-                    return React.createElement("div", { key: "orig-images", style: { marginTop: "6px" } },
-                      renderMessageImagesCompat(imgs, props));
-                  }
-                  if (typeof props.loadImage === "function") {
-                    return React.createElement("div", { key: "orig-images-self", style: { display: "flex", flexWrap: "wrap", gap: "6px" } },
-                      refs.map(function (r3, ri3) {
-                        return React.createElement(PendingOriginalImage, { key: ri3, ref: r3, loadImage: props.loadImage });
-                      }));
-                  }
-                  return null;
-                } catch (eOi) { return null; }
-              })()),
-              React.createElement("div", { key: "orig-text", style: previewStyle }, text || L.emptyMsg)
-            ] : L.greyText
+            text || L.emptyMsg
+          ) : React.createElement(
+            "div", {
+              style: grayBubbleStyle,
+              title: L.viewOriginal,
+              onClick: togglePreview
+            },
+            L.greyText
           )
         );
       }
