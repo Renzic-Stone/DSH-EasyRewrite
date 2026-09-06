@@ -2534,20 +2534,34 @@ window.__ModuleLoader__.load({
         })();
       }, [isEditPending]);
 
-      // 编辑态：document 捕获级接管文件拖拽（bug①）。官方全屏提示层由 dsh-client-ui-attachment
-      // 在 document 冒泡阶段以 dragenter/dragleave 计数驱动、drop 时才 reset——旧实现只拦 drop 且
-      // stopPropagation，官方收不到任何后续事件 → 提示层永久卡死。现在 dragenter/dragover 一并在
-      // 捕获阶段拦下：提示层根本不出现；drop 只进编辑缩略图、不漏下方输入框。随编辑态启停。
+      // 编辑态：document 捕获级接管文件拖拽（v2.4.2 拖入dropzone版）
+      // - dragenter/dragover/drop/dragleave 全部捕获级拦截：官方全屏提示层不出现
+      // - dragenter → setDragActive(true)（虚线框+毛玻璃dropzone显示）
+      // - dragleave 深度计数归零 → setDragActive(false)（拖出窗口则隐藏）
+      // - drop → setDragActive(false) + 图片导入
       React.useEffect(function () {
         if (!editing) return;
+        var dragDepth = 0;
         function looksLikeFileDrag(e) {
           try { var t = e.dataTransfer; return !!(t && t.types && Array.prototype.indexOf.call(t.types, "Files") !== -1); } catch (eT) { return false; }
         }
         function suppress(e) { e.preventDefault(); e.stopPropagation(); }
-        function onDragEnter(e) { if (looksLikeFileDrag(e)) suppress(e); }
+        function onDragEnter(e) {
+          if (!looksLikeFileDrag(e)) return;
+          suppress(e);
+          dragDepth++;
+          if (dragDepth === 1) setDragActive(true);
+        }
         function onDragOver(e) { if (looksLikeFileDrag(e)) suppress(e); }
+        function onDragLeave(e) {
+          if (!looksLikeFileDrag(e)) return;
+          dragDepth = Math.max(0, dragDepth - 1);
+          if (dragDepth === 0) setDragActive(false);
+        }
         function onDrop(e) {
           suppress(e);
+          dragDepth = 0;
+          setDragActive(false);
           try {
             var imgFiles = [];
             var dt = e.dataTransfer;
@@ -2560,7 +2574,6 @@ window.__ModuleLoader__.load({
             if (imgFiles.length === 0 || !ctxConversationRef || typeof ctxConversationRef.createDraftImages !== "function") return;
             var dImgs = ctxConversationRef.createDraftImages(imgFiles);
             var addedItems = dImgs.map(function (im) { return { id: im.id, url: im.previewUrl, dataUrl: null }; });
-            // 异步补 dataUrl 字节快照（bug② 刷新后可重建）
             for (var ai = 0; ai < addedItems.length; ai++) {
               (function (item, srcFile) {
                 fileToDataUrl(srcFile).then(function (du) {
@@ -2579,10 +2592,12 @@ window.__ModuleLoader__.load({
         }
         document.addEventListener("dragenter", onDragEnter, true);
         document.addEventListener("dragover", onDragOver, true);
+        document.addEventListener("dragleave", onDragLeave, true);
         document.addEventListener("drop", onDrop, true);
         return function () {
           document.removeEventListener("dragenter", onDragEnter, true);
           document.removeEventListener("dragover", onDragOver, true);
+          document.removeEventListener("dragleave", onDragLeave, true);
           document.removeEventListener("drop", onDrop, true);
         };
       }, [editing]);
@@ -2899,7 +2914,8 @@ window.__ModuleLoader__.load({
             },
             onDragOver: function (e) { e.preventDefault(); e.stopPropagation(); }
           },
-        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" } },
+        React.createElement("div", { style: Object.assign({ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" }, dragActive ? { minHeight: "88px", border: "3px dashed var(--dsw-static-deepseek-500, #4d6bfe)", borderRadius: "16px", background: "rgba(77,107,254,0.06)", padding: "12px", alignItems: "center" } : {}) },
+          dragActive ? React.createElement("div", { key: "dz-hint", style: { width: "100%", fontSize: "14px", color: "var(--dsw-static-deepseek-500, #4d6bfe)", textAlign: "center", padding: "4px 0" } }, L.insertImageShort) : null,
           editImages.map(function(ei, eiIdx) {
             return React.createElement("div", { key: ei.id, style: { position: "relative", width: "72px", height: "72px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))" } },
               React.createElement("img", { src: ei.url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
