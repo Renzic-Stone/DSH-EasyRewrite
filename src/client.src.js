@@ -56,6 +56,7 @@ window.__ModuleLoader__.load({
     function setBool(key, v) { setSetting(key, v ? "1" : "0"); }
     function draftConflictMode() { return getSetting(SETTING_KEYS.conflictMode, "overwrite"); }
     function recallVisualMode() { return getSetting(SETTING_KEYS.visualMode, "simple"); }
+    function showOriginalImages() { return getBool("dsh-easyrewrite:showOriginalImages", true); }
     // 行为开关（设置页控制）
     function rewriteOnClick() { return getBool("dsh-easyrewrite:rewriteOnClick", true); }
     function editOffShowRecall() { return getBool("dsh-easyrewrite:editOffShowRecall", true); }
@@ -1177,7 +1178,8 @@ window.__ModuleLoader__.load({
         enableNow: "一键开启",
         remindIgnore: "不再显示",
         copyUpgradeCmd: "复制升级命令",
-        dragHint: "松开鼠标，图片将加入正在编辑的气泡（如需发送到下方输入框，请先取消编辑）"
+        dragHint: "松开鼠标，图片将加入正在编辑的气泡（如需发送到下方输入框，请先取消编辑）",
+        showOriginalImages: "撤回待定时查看原文显示图片"
       },
       en: {
         title: "EasyRewrite",
@@ -1267,7 +1269,8 @@ window.__ModuleLoader__.load({
         enableNow: "Enable",
         remindIgnore: "Don't show again",
         copyUpgradeCmd: "Copy upgrade command",
-        dragHint: "Drop to add the image to the bubble being edited (to send via the composer below, cancel the edit first)"
+        dragHint: "Drop to add the image to the bubble being edited (to send via the composer below, cancel the edit first)",
+        showOriginalImages: "Show images when viewing original text while pending"
       },
       ja: {
         title: "EasyRewrite",
@@ -1357,7 +1360,8 @@ window.__ModuleLoader__.load({
         enableNow: "有効にする",
         remindIgnore: "今後表示しない",
         copyUpgradeCmd: "アップグレードコマンドをコピー",
-        dragHint: "ドロップで編集中のバブルに画像を追加（下の入力欄へ送る場合は先に編集をキャンセル）"
+        dragHint: "ドロップで編集中のバブルに画像を追加（下の入力欄へ送る場合は先に編集をキャンセル）",
+        showOriginalImages: "取り消し待ちの原文表示で画像を表示"
       }
     };
     function uiLang() {
@@ -1756,6 +1760,12 @@ window.__ModuleLoader__.load({
           React.createElement("div", { style: sectionStyle },
             React.createElement("span", { style: groupTitleStyle }, L.sectionRecall),
             switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
+            (function () {
+              var sOrigImg = React.useState(showOriginalImages());
+              var origImg = sOrigImg[0];
+              var setOrigImg = sOrigImg[1];
+              return switchRow(L.showOriginalImages, origImg, function (v) { setOrigImg(v); setBool("dsh-easyrewrite:showOriginalImages", v); });
+            })(),
             // 视觉模式
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.visualMode),
@@ -2689,9 +2699,19 @@ window.__ModuleLoader__.load({
               title: showPreview ? L.collapse : L.viewOriginal,
               onClick: function (e) { e.stopPropagation(); setShowPreview(!showPreview); }
             },
-            showPreview
-              ? React.createElement("div", { style: previewStyle }, text || L.emptyMsg)
-              : L.greyText
+            showPreview ? [
+              (showOriginalImages() && (function () {
+                // v2.4.0：展开原文时把该消息的图片渲染回来（数据=渲染期缓存的 attachRefs；双宿主经官方 renderMessageImages prop）
+                try {
+                  var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
+                  if (refs.length === 0) return null;
+                  var imgs = refs.map(function (r2) { return { attachment: r2 }; });
+                  return React.createElement("div", { key: "orig-images", style: { marginTop: "6px" } },
+                    renderMessageImagesCompat(imgs, props));
+                } catch (eOi) { return null; }
+              })()),
+              React.createElement("div", { key: "orig-text", style: previewStyle }, text || L.emptyMsg)
+            ] : L.greyText
           )
         );
       }
