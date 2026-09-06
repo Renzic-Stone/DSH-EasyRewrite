@@ -243,13 +243,8 @@ window.__ModuleLoader__.load({
           var ref = attachmentRefs[i];
           if (!ref || typeof ref.attachmentId !== "string") { log("warn", "attach", "附件引用缺 attachmentId", { i: i }); continue; }
           try {
-            // 按需读官方缓存：resolveImage(旧会话 live 时) → URL → fetch blob → File（review #3 删除自建内存缓存层）
-            var url = null;
-            if (ctxConversationRef && typeof ctxConversationRef.resolveImage === "function") {
-              url = await ctxConversationRef.resolveImage(sessionId, ref);
-            } else if (typeof props.loadImage === "function") {
-              url = await props.loadImage(ref);
-            }
+            // v2.4.0：resolveImageCompat 双宿主兼容（rc.2 resolveImage / rc.1 imageUrl+loadImage）
+            var url = await resolveImageCompat(sessionId, ref, props);
             if (!url) { log("warn", "attach", "resolveImage 返回空 URL", { attachmentId: ref.attachmentId }); continue; }
             var resp = await fetch(url);
             if (!resp.ok) { log("warn", "attach", "fetch 失败", { status: resp.status, url: String(url).slice(0, 80) }); continue; }
@@ -297,9 +292,8 @@ window.__ModuleLoader__.load({
           var ref = refs[i];
           if (!ref || typeof ref.attachmentId !== "string") { log("warn", "attach", "桥接跳过：缺 attachmentId", { i: i }); continue; }
           try {
-            var url = null;
-            if (typeof ctxConversationRef.resolveImage === "function") url = await ctxConversationRef.resolveImage(sessionId, ref);
-            if (!url) { log("warn", "attach", "resolveImage 空 URL", { attachmentId: ref.attachmentId }); continue; }
+            var url = await resolveImageCompat(sessionId, ref, null);
+            if (!url) { log("warn", "attach", "桥接空 URL", { attachmentId: ref.attachmentId }); continue; }
             var resp2 = await fetch(url);
             if (!resp2.ok) { log("warn", "attach", "桥接 fetch 失败", { status: resp2.status }); continue; }
             var blob = await resp2.blob();
@@ -337,6 +331,21 @@ window.__ModuleLoader__.load({
     }
 
     var ctxConversationRef = null; // apply 时注入 conversation 服务
+    var ctxUiConversationRef = null; // v2.4.0: dsh 0.1.2 的 uiConversation 服务（弱引用；0.1.1-rc.2 无此服务时为 null）
+    var ctxUiWorkspaceRef = null;    // v2.4.0: dsh 0.1.2 的 uiWorkspace 服务（弱引用）
+    /** v2.4.0：图片 URL 解析双宿主兼容——props.loadImage（两代都有）/ rc.2 resolveImage / rc.1 uiConversation.imageUrl */
+    async function resolveImageCompat(sessionId, ref, props) {
+      if (props && typeof props.loadImage === "function") {
+        try { var u1 = await props.loadImage(ref); if (u1) return u1; } catch (e1) { /* 次选 */ }
+      }
+      if (ctxConversationRef && typeof ctxConversationRef.resolveImage === "function") {
+        try { var u2 = await ctxConversationRef.resolveImage(sessionId, ref); if (u2) return u2; } catch (e2) { /* 次选 */ }
+      }
+      if (ctxUiConversationRef && typeof ctxUiConversationRef.imageUrl === "function") {
+        try { return await ctxUiConversationRef.imageUrl(sessionId, ref); } catch (e3) { /* ignore */ }
+      }
+      return null;
+    }
 
     // ---------- 语义化版本比较（1.2.4 < 1.3.0；缺失段视为 0） ----------
     function versionGt(a, b) {
@@ -350,6 +359,39 @@ window.__ModuleLoader__.load({
         if (av < bv) return false;
       }
       return false;
+    }
+
+    // ---------- dsh 宿主版本比较（v2.4.0） ----------
+    var MIN_DSH_VERSION = "0.1.2-rc.1";
+    var MAX_TESTED_DSH_VERSION = "0.1.2-rc.1";
+    function dshVerRank(v) {
+      var m = String(v || "").trim().match(/^(\d+)\.(\d+)\.(\d+)(?:-(alpha|rc)\.(\d+))?$/);
+      if (!m) return null;
+      return { core: [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)], pre: m[4] ? (m[4] === "rc" ? 2 : 1) : 3, preNum: m[5] ? parseInt(m[5], 10) : 0 };
+    }
+    function cmpDsh(a, b) {
+      var va = dshVerRank(a), vb = dshVerRank(b);
+      if (!va || !vb) return 0;
+      for (var i = 0; i < 3; i++) { if (va.core[i] !== vb.core[i]) return va.core[i] - vb.core[i]; }
+      if (va.pre !== vb.pre) return va.pre - vb.pre;
+      return va.preNum - vb.preNum;
+    }
+
+    // ---------- 宿主会话快照读取兼容层（v2.4.0） ----------
+    // dsh 0.1.2 起 chat 快照经 useChat 提供（ChatSnapshot 直接形态：order + nodes.get + hasMore），
+    // 0.1.1-rc.2 经 useSession（会话快照，chat 子对象）。这里统一返回 chat 快照形态；不可用返回 null。
+    function hasChatSnapshot(props) {
+      return !!(props && ((typeof props.useChat === "function") || (typeof props.useSession === "function")));
+    }
+    function getChatSnapshot(props) {
+      try {
+        if (props && typeof props.useChat === "function") return props.useChat(function (s) { return s; });
+        if (props && typeof props.useSession === "function") {
+          var s = props.useSession(function (x) { return x; });
+          return s && s.chat ? s.chat : s;
+        }
+      } catch (eSnap) { /* ignore */ }
+      return null;
     }
 
     // ---------- pending store（按会话；内存缓存 + localStorage 持久化 + 订阅） ----------
@@ -453,7 +495,7 @@ window.__ModuleLoader__.load({
             var keepArr = Array.isArray(pending.preUserImageIds) ? pending.preUserImageIds : [];
             for (var kk = 0; kk < keepArr.length; kk++) keepSet[keepArr[kk]] = true;
             var curX = [];
-            var sX = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : null;
+            var sX = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : (props.inputState || null);
             if (sX && Array.isArray(sX.imageIds)) curX = sX.imageIds.slice();
             var removedAny = false;
             if (ia && typeof ia.removeImage === "function") {
@@ -635,20 +677,20 @@ window.__ModuleLoader__.load({
       // 窗口内无但 hasMore=true → 快照窗口外，{code:"host-fallback"} 走保留的 host 路由。
       function computeRecallBoundary(props, targetSeq) {
         try {
-          if (typeof props.useSession !== "function") return null; // 无法本地判定 → host fallback
-          var snapshot = props.useSession(function (s) { return s; });
-          if (!snapshot || !snapshot.chat || !Array.isArray(snapshot.chat.order) || !snapshot.chat.nodes || typeof snapshot.chat.nodes.get !== "function") return null;
-          var order = snapshot.chat.order;
+          if (!hasChatSnapshot(props)) return null; // 无法本地判定 → host fallback
+          var snapshot = getChatSnapshot(props);
+          if (!snapshot || !Array.isArray(snapshot.order) || !snapshot.nodes || typeof snapshot.nodes.get !== "function") return null;
+          var order = snapshot.order;
           var tIdx = -1;
           for (var i = 0; i < order.length; i++) {
-            var nd = snapshot.chat.nodes.get(order[i]);
+            var nd = snapshot.nodes.get(order[i]);
             if (!nd || nd.kind !== "user") continue;
             var sq = nd.data && typeof nd.data.seq === "number" ? nd.data.seq : (typeof nd.anchorSeq === "number" ? nd.anchorSeq : -1);
             if (sq === targetSeq) { tIdx = i; break; }
           }
           if (tIdx === -1) return null; // 目标不在快照 → host fallback
           for (var k = tIdx - 1; k >= 0; k--) {
-            var n2 = snapshot.chat.nodes.get(order[k]);
+            var n2 = snapshot.nodes.get(order[k]);
             if (!n2 || n2.kind !== "turn-tail") continue;
             var cl = n2.data && n2.data.closing;
             if (cl && cl.finalNode && typeof cl.finalNode.seq === "number") return { atSeq: cl.finalNode.seq };
@@ -656,7 +698,7 @@ window.__ModuleLoader__.load({
             // 跳过会把边界推得更早、整段误切
             if (n2.data && typeof n2.data.seq === "number") return { atSeq: n2.data.seq };
           }
-          var hasMore = snapshot.chat.hasMore === true;
+          var hasMore = snapshot.hasMore === true;
           return hasMore ? { code: "host-fallback" } : { code: "no-boundary" };
         } catch (e) {
           log("warn", "recall", "本地边界计算异常", { err: String(e && e.message ? e.message : e) });
@@ -676,13 +718,9 @@ window.__ModuleLoader__.load({
             var ta = document.querySelector("[data-input-scroll] textarea");
             if (ta && typeof ta.value === "string" && ta.value !== "") sendText = ta.value;
           } catch (e) { /* ignore */ }
-          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork），输入框内容带到新起点自动发送
-          log("info", "reset", "首条判定命中 → 走 resetConversation", { targetKey: p.targetKey });
-          if (isFirstUserMessage(props, p.targetKey)) {
-            recallInFlight = false;
-            resetConversation(sid, "edit", sendText, props, latestInputImageIds.slice());
-            return;
-          }
+          // 极限场景判定（v2.4.0 改约）：窗口化快照上的 isFirstUserMessage 会误判（窗口起点=目标消息即误报首条），
+          // 首条/截断场景统一交给宿主判定树——/bubble/recall 返回 no-boundary/turn-open 时再走 resetConversation。
+          // 本地只保留快照可判时的提前短路（no-boundary）。
           // v2.1.1：fork 前捕获当前模型/思考挡位（选择器真值），随 resume 标记带到新会话
           var msel = props.modelSel ? props.modelSel.capture(sid) : null;
           // review L5：日志去内容化（只记长度，不落明文）
@@ -1132,7 +1170,13 @@ window.__ModuleLoader__.load({
         effortMenu: "推理等级",
         effortDefault: "Default",
         modelsLoading: "正在刷新模型列表…",
-        modelsEmpty: "没有可用的模型。"
+        modelsEmpty: "没有可用的模型。",
+        dshLowWarning: "当前 dsh（{cur}）低于本插件要求的最低版本（{min}）——请先升级 dsh：",
+        dshNewNotice: "当前 dsh（{cur}）较新，本插件的适配评估中，如遇异常请回退 dsh 或关注更新",
+        suggestAutoCheck: "建议开启「每日检查更新」：dsh 升级频繁，及时更新插件可避免兼容问题",
+        enableNow: "一键开启",
+        remindIgnore: "不再显示",
+        copyUpgradeCmd: "复制升级命令"
       },
       en: {
         title: "EasyRewrite",
@@ -1215,7 +1259,13 @@ window.__ModuleLoader__.load({
         effortMenu: "Reasoning effort",
         effortDefault: "Default",
         modelsLoading: "Refreshing model list…",
-        modelsEmpty: "No models available."
+        modelsEmpty: "No models available.",
+        dshLowWarning: "Your dsh ({cur}) is below the minimum required by this plugin ({min}) — please upgrade dsh first:",
+        dshNewNotice: "Your dsh ({cur}) is newer than the tested range; compatibility is being evaluated",
+        suggestAutoCheck: "Enable daily update checks: dsh updates frequently, keeping the plugin current avoids compatibility issues",
+        enableNow: "Enable",
+        remindIgnore: "Don't show again",
+        copyUpgradeCmd: "Copy upgrade command"
       },
       ja: {
         title: "EasyRewrite",
@@ -1298,7 +1348,13 @@ window.__ModuleLoader__.load({
         effortMenu: "推論レベル",
         effortDefault: "Default",
         modelsLoading: "モデル一覧を更新中…",
-        modelsEmpty: "利用可能なモデルがありません。"
+        modelsEmpty: "利用可能なモデルがありません。",
+        dshLowWarning: "現在の dsh（{cur}）は本プラグインの最低要件（{min}）を下回っています——先に dsh をアップグレードしてください：",
+        dshNewNotice: "現在の dsh（{cur}）は検証済み範囲より新しいため、適合を評価中です",
+        suggestAutoCheck: "「毎日更新を確認」の有効化を推奨：dsh の更新が頻繁なため、プラグインを最新に保つと互換性問題を回避できます",
+        enableNow: "有効にする",
+        remindIgnore: "今後表示しない",
+        copyUpgradeCmd: "アップグレードコマンドをコピー"
       }
     };
     function uiLang() {
@@ -1359,6 +1415,12 @@ window.__ModuleLoader__.load({
       var sUpdateVer = React.useState("");
       var updateVer = sUpdateVer[0];
       var setUpdateVer = sUpdateVer[1];
+      var sDshVer = React.useState(null);
+      var dshVer = sDshVer[0];
+      var setDshVer = sDshVer[1];
+      var sRemindClosed = React.useState(getBool("dsh-easyrewrite:autoCheckReminded", false));
+      var remindClosed = sRemindClosed[0];
+      var setRemindClosed = sRemindClosed[1];
       var sUpdateMsg = React.useState("");
       var updateMsg = sUpdateMsg[0];
       var setUpdateMsg = sUpdateMsg[1];
@@ -1386,6 +1448,7 @@ window.__ModuleLoader__.load({
           setUpdateChecking(false);
           if (!d || !d.ok) { setUpdateMsg(L.updateFailed); return; }
           setUpdateVer(d.current || "?");
+          setDshVer(typeof d.dshVersion === "string" ? d.dshVersion : null);
           if (d.latest && versionGt(d.latest, d.current || "0")) {
             setUpdateAvailableVer(d.latest);
             try { localStorage.setItem("dsh-easyrewrite:updateAvailable", "1"); } catch (e) { /* ignore */ }
@@ -1822,6 +1885,23 @@ window.__ModuleLoader__.load({
             // 更新检查与执行（精简版：手动检查 + 每日检测可选 + 有新版提示）
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.currentVersion + "：" + (updateVer || "…")),
+              (function () {
+                if (!dshVer) return null;
+                if (cmpDsh(dshVer, MIN_DSH_VERSION) < 0) return React.createElement("div", { key: "dsh-low", style: { display: "flex", flexDirection: "column", gap: "4px", padding: "6px 8px", background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.1))", borderRadius: "8px" } },
+                  React.createElement("span", { style: { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)" } }, L.dshLowWarning.replace("{cur}", dshVer).replace("{min}", MIN_DSH_VERSION)),
+                  React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+                    React.createElement("code", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, "npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION),
+                    React.createElement("button", { type: "button", style: { appearance: "none", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))", background: "transparent", color: "var(--dsw-alias-label-secondary)", borderRadius: "6px", padding: "2px 8px", fontSize: "11px", cursor: "pointer", fontFamily: "inherit", flex: "none" }, onClick: function () { try { legacyCopy("npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION); } catch (eC1) { /* ignore */ } } }, L.copyUpgradeCmd)
+                  )
+                );
+                if (cmpDsh(MAX_TESTED_DSH_VERSION, dshVer) < 0) return React.createElement("div", { key: "dsh-new", style: { padding: "6px 8px", fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-secondary)", background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08))", borderRadius: "8px" } }, L.dshNewNotice.replace("{cur}", dshVer));
+                return null;
+              })(),
+              !remindClosed && !getBool("dsh-easyrewrite:autoCheckUpdate", false) ? React.createElement("div", { key: "remind", style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", background: "rgba(77,107,254,0.08)", borderRadius: "8px" } },
+                React.createElement("span", { style: { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)", flex: "1", minWidth: "0" } }, L.suggestAutoCheck),
+                React.createElement("button", { type: "button", style: { appearance: "none", border: "none", background: "var(--dsw-static-deepseek-500, #4d6bfe)", color: "#ffffff", borderRadius: "6px", padding: "3px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckUpdate", true); setBool("dsh-easyrewrite:autoCheckReminded", true); setAutoCheckOn(true); setRemindClosed(true); } }, L.enableNow),
+                React.createElement("button", { type: "button", title: L.remindIgnore, style: { appearance: "none", border: "none", background: "transparent", color: "var(--dsw-alias-label-tertiary)", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none", padding: "3px", textDecoration: "underline" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckReminded", true); setRemindClosed(true); } }, L.remindIgnore)
+              ) : null,
               React.createElement("div", { style: rowStyle },
                 React.createElement("span", { style: hintStyle, flex: "1" }, updateMsg || ""),
                 React.createElement("button", {
@@ -1917,11 +1997,11 @@ window.__ModuleLoader__.load({
     /** 该消息是否为会话第一条 user 消息（首条/截断会话首条无前置闭合边界）——模块级，UserBubbleView 与 RecallBanner 共用 */
     function isFirstUserMessage(props, myKey) {
       try {
-        var snap = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
-        if (snap && snap.chat && Array.isArray(snap.chat.order) && snap.chat.nodes && typeof snap.chat.nodes.get === "function") {
-          var ord = snap.chat.order;
+        var snap = getChatSnapshot(props);
+        if (snap && Array.isArray(snap.order) && snap.nodes && typeof snap.nodes.get === "function") {
+          var ord = snap.order;
           for (var oi = 0; oi < ord.length; oi++) {
-            var on = snap.chat.nodes.get(ord[oi]);
+            var on = snap.nodes.get(ord[oi]);
             if (on && on.kind === "user") return on.key === myKey;
           }
         }
@@ -1990,8 +2070,9 @@ window.__ModuleLoader__.load({
           }
         }
           log("info", "reset", "场景1工作区定位", { sessionId: sessionId, wsId: wsId, hasConnect: !!(props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") });
-        if (wsId && props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") {
-          props.ctxWorkspaces.connectWorkspace(wsId).then(function (newId) {
+        var wsConnector = (ctxUiWorkspaceRef && typeof ctxUiWorkspaceRef.connectWorkspace === "function") ? ctxUiWorkspaceRef : ((props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") ? props.ctxWorkspaces : null);
+        if (wsId && wsConnector) {
+          wsConnector.connectWorkspace(wsId).then(function (newId) {
             if (!newId) return;
             if (mode === "edit" && typeof text === "string") {
               try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel })); } catch (e) { /* ignore */ }
@@ -2057,11 +2138,11 @@ window.__ModuleLoader__.load({
       // order 最后一项是 turn-tail 且其 data.closing.finalNode.messageId == 本组件的 messageId
       var isLastTail = false;
       try {
-        var snapshot = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
-        if (snapshot && snapshot.chat && Array.isArray(snapshot.chat.order) && snapshot.chat.nodes && typeof snapshot.chat.nodes.get === "function") {
-          var order = snapshot.chat.order;
+        var snapshot = getChatSnapshot(props);
+        if (snapshot && Array.isArray(snapshot.order) && snapshot.nodes && typeof snapshot.nodes.get === "function") {
+          var order = snapshot.order;
           if (order.length > 0) {
-            var tt = snapshot.chat.nodes.get(order[order.length - 1]);
+            var tt = snapshot.nodes.get(order[order.length - 1]);
             if (tt && tt.kind === "turn-tail" && tt.data && tt.data.closing && tt.data.closing.finalNode) {
               isLastTail = tt.data.closing.finalNode.messageId === props.messageId;
             }
@@ -2354,10 +2435,12 @@ window.__ModuleLoader__.load({
 
       // 渲染期读取输入框草稿（存 ref 供确认时使用）
       var draftRef = React.useRef("");
-      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : null;
-      if (inputState) draftRef.current = inputState.draft;
+      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : (props.inputState || null);
+      if (inputState) draftRef.current = typeof inputState.draft === "string" ? inputState.draft : "";
         // 镜像输入框当前图片 id（供撤回/编辑发送时精确搬运）
         try { if (Array.isArray(inputState.imageIds)) latestInputImageIds = inputState.imageIds.slice(); } catch (eMir) { /* ignore */ }
+        // v2.4.0：rc.1 input门面（props.inputState）的 imageIds 同步
+        try { if (props.inputState && Array.isArray(props.inputState.imageIds)) latestInputImageIds = props.inputState.imageIds.slice(); } catch (eMir2) { /* ignore */ }
 
       // 灰字气泡的原文预览展开态（simple/info 模式点击切换）
       var previewState = React.useState(false);
@@ -2421,8 +2504,8 @@ window.__ModuleLoader__.load({
             var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
             for (var ri = 0; ri < refs.length; ri++) {
               try {
-                if (!ctxConversationRef || typeof ctxConversationRef.resolveImage !== "function" || typeof ctxConversationRef.createDraftImages !== "function") break;
-                var rUrl = await ctxConversationRef.resolveImage(sessionId, refs[ri]);
+                if (!ctxConversationRef || typeof ctxConversationRef.createDraftImages !== "function") break;
+                var rUrl = await resolveImageCompat(sessionId, refs[ri], null);
                 if (!rUrl) continue;
                 var rResp = await fetch(rUrl);
                 if (!rResp.ok) continue;
@@ -2524,16 +2607,16 @@ window.__ModuleLoader__.load({
       var onlyUser = statOnlyUser();
       try {
         // 注意：useSession 必须传 selector（官方 bindSnapshotSelector 契约），无参调用会崩
-        var snapshot = typeof props.useSession === "function" ? props.useSession(function (s) { return s; }) : null;
+        var snapshot = getChatSnapshot(props);
         if (snapshot) {
-          // 主路径：chat.order（权威渲染顺序）+ 当前节点 key
-          if (snapshot.chat && Array.isArray(snapshot.chat.order) && snapshot.chat.nodes && typeof snapshot.chat.nodes.get === "function") {
-            var order = snapshot.chat.order;
+          // 主路径：order（权威渲染顺序）+ 当前节点 key（v2.4.0：快照经 getChatSnapshot 归一化）
+          if (Array.isArray(snapshot.order) && snapshot.nodes && typeof snapshot.nodes.get === "function") {
+            var order = snapshot.order;
             var myKey = node && typeof node.key === "string" ? node.key : "";
             var myIdx = order.indexOf(myKey);
             if (myIdx !== -1) {
               for (var k = myIdx + 1; k < order.length; k++) {
-                var afterNode = snapshot.chat.nodes.get(order[k]);
+                var afterNode = snapshot.nodes.get(order[k]);
                 if (!afterNode || afterNode.kind === "turn-tail") continue;
                 if (onlyUser && afterNode.kind !== "user") continue;
                 afterCount++;
@@ -2545,8 +2628,8 @@ window.__ModuleLoader__.load({
             afterCount = countContentAfter(snapshot.nodes, anchorSeq, "seq", onlyUser);
           }
           // 回退路径 2：chat store values（anchorSeq）
-          if (afterCount === 0 && snapshot.chat && snapshot.chat.nodes && typeof snapshot.chat.nodes.values === "function") {
-            afterCount = countContentAfter(snapshot.chat.nodes.values(), anchorSeq, "anchorSeq", onlyUser);
+          if (afterCount === 0 && snapshot.nodes && typeof snapshot.nodes.values === "function") {
+            afterCount = countContentAfter(snapshot.nodes.values(), anchorSeq, "anchorSeq", onlyUser);
           }
         }
       } catch (err) {
@@ -2636,7 +2719,7 @@ window.__ModuleLoader__.load({
               try {
                 var eFiles = [];
                 for (var ei2 = 0; ei2 < _er.length; ei2++) {
-                  var eUrl = ctxConversationRef && typeof ctxConversationRef.resolveImage === "function" ? await ctxConversationRef.resolveImage(sessionId, _er[ei2]) : null;
+                  var eUrl = await resolveImageCompat(sessionId, _er[ei2], props);
                   if (!eUrl) continue;
                   var eResp = await fetch(eUrl); if (!eResp.ok) continue;
                   var eBlob = await eResp.blob();
@@ -2667,25 +2750,8 @@ window.__ModuleLoader__.load({
           var newText = editText;
           var sid = sessionId;
           var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
-          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork；编辑文本带到新起点）
-          if (isFirstUserMessage(props, myKey)) {
-            setEditing(false);
-            // 首条带图编辑：桥接图片字节（此时旧会话仍 live），随重置带入新会话
-            var fmAt = [];
-            try {
-              if (data && Array.isArray(data.content)) {
-                for (var fmAi = 0; fmAi < data.content.length; fmAi++) {
-                  var fmAb = data.content[fmAi];
-                  if (fmAb && fmAb.type === "image" && fmAb.attachment && typeof fmAb.attachment.attachmentId === "string") {
-                    fmAt.push({ attachmentId: fmAb.attachment.attachmentId, mediaType: fmAb.attachment.mediaType, name: fmAb.attachment.name });
-                  }
-                }
-              }
-            } catch (eFm) { /* ignore */ }
-            var fmIds = await bridgeSessionImages(sid, fmAt);
-            resetConversation(sid, "edit", newText, props, fmIds, editSel);
-            return;
-          }
+          // v2.4.0：首条/截断场景交由宿主判定树（下方 no-boundary/turn-open 分支统一走 resetConversation），
+          // 窗口化快照上的 isFirstUserMessage 本地判定已移除（误判源）。图片桥接随命中分支执行。
           // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
           // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
           // 诊断：dump content 块类型
@@ -2954,7 +3020,7 @@ window.__ModuleLoader__.load({
                 // 快照用户确认前输入框已有的图（× 取消时保留；消息自身的图走 attachRefs）
                 var preUserImageIds = [];
                 try {
-                  var sPre = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : null;
+                  var sPre = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : (props.inputState || null);
                   if (sPre && Array.isArray(sPre.imageIds)) preUserImageIds = sPre.imageIds.slice();
                 } catch (e) { /* ignore */ }
                 writePending(sessionId, {
@@ -2999,11 +3065,7 @@ window.__ModuleLoader__.load({
                       log("warn", "recall", "已有待处理撤回（单待定约束）");
                       return;
                     }
-                    // 极限场景：首条消息（含截断会话）——确认后按场景重置（家族→回父版本；无家族→空白顶替）
-                    if (isFirstUserMessage(props, myKey)) {
-                      setConfirming(true);
-                      return;
-                    }
+                    // v2.4.0：首条/截断场景交由宿主判定树（发送时 no-boundary/turn-open → resetConversation）
                     // review M5：存在编辑待定 → 丢弃编辑草稿转撤回（与编辑态操作区撤回键同语义）
                     if (pending && pending.type === "edit") {
                       writePending(sessionId, null);
@@ -3061,6 +3123,8 @@ window.__ModuleLoader__.load({
         try { if (typeof ctx.locale === "object" && ctx.locale !== null && typeof ctx.locale.register === "function") ctx.locale.register(NS, {}); } catch (e) { /* ignore */ }
         log("info", "lifecycle", "client half active");
         try { ctxConversationRef = ctx.conversation; } catch (e) { ctxConversationRef = null; }
+        try { ctxUiConversationRef = (typeof ctx.get === "function") ? (ctx.get("uiConversation") || null) : null; } catch (eUic) { ctxUiConversationRef = null; }
+        try { ctxUiWorkspaceRef = (typeof ctx.get === "function") ? (ctx.get("uiWorkspace") || null) : null; } catch (eUiw) { ctxUiWorkspaceRef = null; }
           // 陈旧版本树键清扫（review #6：lineage 已接管；旧 localStorage 键为死数据，启动时一次清掉）
           try {
             var stale = [];
@@ -3138,13 +3202,24 @@ window.__ModuleLoader__.load({
             name: "conversation.chat.node",
             key: "user",
             priority: -1,
-            inject: function () {
+            inject: function (sessionId) {
+              // v2.4.0：chat.node 槽同样经 input 门面自取 inputActions（dsh 0.1.2 不再下发）
+              var inputShell2 = null;
+              try {
+                if (sessionId) {
+                  var scope2 = ctx.sessions.scope(sessionId);
+                  var conv2 = scope2 ? scope2.get("conversation") : null;
+                  if (conv2 && conv2.input && typeof conv2.input.for === "function") inputShell2 = conv2.input.for(scope2);
+                }
+              } catch (eSh2) { inputShell2 = null; }
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
                 ctxSessions: ctx.sessions,
                 modelSel: modelSel,
                 modelDirectories: ctx.modelDirectories,
+                inputActions: inputShell2 && inputShell2.actions ? inputShell2.actions : null,
+                inputState: inputShell2,
                 restoreSession: function (id) {
                   return fetch("/bubble/unarchive", {
                     method: "POST",
@@ -3167,12 +3242,26 @@ window.__ModuleLoader__.load({
             name: "conversation.input.dock",
             id: "dsh-easyrewrite-recall-banner",
             order: -10,
-            inject: function () {
+            inject: function (sessionId) {
+              // v2.4.0：dsh 0.1.2 起宿主不再下发 inputActions——经 input 门面自取（方法名与旧 inputActions 完全一致）
+              var actx = null, inputShell = null;
+              try {
+                if (typeof ctx.sessions.scope === "function" && sessionId) {
+                  var scope = ctx.sessions.scope(sessionId);
+                  var conversationSvc = scope ? scope.get("conversation") : null;
+                  if (conversationSvc && conversationSvc.input && typeof conversationSvc.input.for === "function") {
+                    inputShell = conversationSvc.input.for(scope);
+                  }
+                }
+              } catch (eShell) { inputShell = null; }
               return {
+                sessionId: sessionId,
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
                 ctxSessions: ctx.sessions,
                 modelSel: modelSel,
+                inputActions: inputShell && inputShell.actions ? inputShell.actions : null,
+                inputState: inputShell || null,
                 restoreSession: function (id) {
                   return fetch("/bubble/unarchive", {
                     method: "POST",
