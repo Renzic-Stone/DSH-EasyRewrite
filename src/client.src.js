@@ -718,13 +718,9 @@ window.__ModuleLoader__.load({
             var ta = document.querySelector("[data-input-scroll] textarea");
             if (ta && typeof ta.value === "string" && ta.value !== "") sendText = ta.value;
           } catch (e) { /* ignore */ }
-          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork），输入框内容带到新起点自动发送
-          log("info", "reset", "首条判定命中 → 走 resetConversation", { targetKey: p.targetKey });
-          if (isFirstUserMessage(props, p.targetKey)) {
-            recallInFlight = false;
-            resetConversation(sid, "edit", sendText, props, latestInputImageIds.slice());
-            return;
-          }
+          // 极限场景判定（v2.4.0 改约）：窗口化快照上的 isFirstUserMessage 会误判（窗口起点=目标消息即误报首条），
+          // 首条/截断场景统一交给宿主判定树——/bubble/recall 返回 no-boundary/turn-open 时再走 resetConversation。
+          // 本地只保留快照可判时的提前短路（no-boundary）。
           // v2.1.1：fork 前捕获当前模型/思考挡位（选择器真值），随 resume 标记带到新会话
           var msel = props.modelSel ? props.modelSel.capture(sid) : null;
           // review L5：日志去内容化（只记长度，不落明文）
@@ -1179,7 +1175,7 @@ window.__ModuleLoader__.load({
         dshNewNotice: "当前 dsh（{cur}）较新，本插件的适配评估中，如遇异常请回退 dsh 或关注更新",
         suggestAutoCheck: "建议开启「每日检查更新」：dsh 升级频繁，及时更新插件可避免兼容问题",
         enableNow: "一键开启",
-        remindIgnore: "忽略",
+        remindIgnore: "不再显示",
         copyUpgradeCmd: "复制升级命令"
       },
       en: {
@@ -1268,7 +1264,7 @@ window.__ModuleLoader__.load({
         dshNewNotice: "Your dsh ({cur}) is newer than the tested range; compatibility is being evaluated",
         suggestAutoCheck: "Enable daily update checks: dsh updates frequently, keeping the plugin current avoids compatibility issues",
         enableNow: "Enable",
-        remindIgnore: "Ignore",
+        remindIgnore: "Don't show again",
         copyUpgradeCmd: "Copy upgrade command"
       },
       ja: {
@@ -1357,7 +1353,7 @@ window.__ModuleLoader__.load({
         dshNewNotice: "現在の dsh（{cur}）は検証済み範囲より新しいため、適合を評価中です",
         suggestAutoCheck: "「毎日更新を確認」の有効化を推奨：dsh の更新が頻繁なため、プラグインを最新に保つと互換性問題を回避できます",
         enableNow: "有効にする",
-        remindIgnore: "無視",
+        remindIgnore: "今後表示しない",
         copyUpgradeCmd: "アップグレードコマンドをコピー"
       }
     };
@@ -1422,6 +1418,9 @@ window.__ModuleLoader__.load({
       var sDshVer = React.useState(null);
       var dshVer = sDshVer[0];
       var setDshVer = sDshVer[1];
+      var sRemindClosed = React.useState(getBool("dsh-easyrewrite:autoCheckReminded", false));
+      var remindClosed = sRemindClosed[0];
+      var setRemindClosed = sRemindClosed[1];
       var sUpdateMsg = React.useState("");
       var updateMsg = sUpdateMsg[0];
       var setUpdateMsg = sUpdateMsg[1];
@@ -1898,10 +1897,10 @@ window.__ModuleLoader__.load({
                 if (cmpDsh(MAX_TESTED_DSH_VERSION, dshVer) < 0) return React.createElement("div", { key: "dsh-new", style: { padding: "6px 8px", fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-secondary)", background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08))", borderRadius: "8px" } }, L.dshNewNotice.replace("{cur}", dshVer));
                 return null;
               })(),
-              !getBool("dsh-easyrewrite:autoCheckUpdate", false) && !getBool("dsh-easyrewrite:autoCheckReminded", false) ? React.createElement("div", { key: "remind", style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", background: "rgba(77,107,254,0.08)", borderRadius: "8px" } },
+              !remindClosed && !getBool("dsh-easyrewrite:autoCheckUpdate", false) ? React.createElement("div", { key: "remind", style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 8px", background: "rgba(77,107,254,0.08)", borderRadius: "8px" } },
                 React.createElement("span", { style: { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)", flex: "1", minWidth: "0" } }, L.suggestAutoCheck),
-                React.createElement("button", { type: "button", style: { appearance: "none", border: "none", background: "var(--dsw-static-deepseek-500, #4d6bfe)", color: "#ffffff", borderRadius: "6px", padding: "3px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckUpdate", true); setBool("dsh-easyrewrite:autoCheckReminded", true); setAutoCheckOn(true); } }, L.enableNow),
-                React.createElement("button", { type: "button", style: { appearance: "none", border: "none", background: "transparent", color: "var(--dsw-alias-label-tertiary)", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none", padding: "3px" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckReminded", true); } }, L.remindIgnore)
+                React.createElement("button", { type: "button", style: { appearance: "none", border: "none", background: "var(--dsw-static-deepseek-500, #4d6bfe)", color: "#ffffff", borderRadius: "6px", padding: "3px 10px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckUpdate", true); setBool("dsh-easyrewrite:autoCheckReminded", true); setAutoCheckOn(true); setRemindClosed(true); } }, L.enableNow),
+                React.createElement("button", { type: "button", title: L.remindIgnore, style: { appearance: "none", border: "none", background: "transparent", color: "var(--dsw-alias-label-tertiary)", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none", padding: "3px", textDecoration: "underline" }, onClick: function () { setBool("dsh-easyrewrite:autoCheckReminded", true); setRemindClosed(true); } }, L.remindIgnore)
               ) : null,
               React.createElement("div", { style: rowStyle },
                 React.createElement("span", { style: hintStyle, flex: "1" }, updateMsg || ""),
@@ -2751,25 +2750,8 @@ window.__ModuleLoader__.load({
           var newText = editText;
           var sid = sessionId;
           var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
-          // 极限场景：首条消息（含截断会话首条）无前置边界 → 重置对话（不 fork；编辑文本带到新起点）
-          if (isFirstUserMessage(props, myKey)) {
-            setEditing(false);
-            // 首条带图编辑：桥接图片字节（此时旧会话仍 live），随重置带入新会话
-            var fmAt = [];
-            try {
-              if (data && Array.isArray(data.content)) {
-                for (var fmAi = 0; fmAi < data.content.length; fmAi++) {
-                  var fmAb = data.content[fmAi];
-                  if (fmAb && fmAb.type === "image" && fmAb.attachment && typeof fmAb.attachment.attachmentId === "string") {
-                    fmAt.push({ attachmentId: fmAb.attachment.attachmentId, mediaType: fmAb.attachment.mediaType, name: fmAb.attachment.name });
-                  }
-                }
-              }
-            } catch (eFm) { /* ignore */ }
-            var fmIds = await bridgeSessionImages(sid, fmAt);
-            resetConversation(sid, "edit", newText, props, fmIds, editSel);
-            return;
-          }
+          // v2.4.0：首条/截断场景交由宿主判定树（下方 no-boundary/turn-open 分支统一走 resetConversation），
+          // 窗口化快照上的 isFirstUserMessage 本地判定已移除（误判源）。图片桥接随命中分支执行。
           // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
           // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
           // 诊断：dump content 块类型
@@ -3083,11 +3065,7 @@ window.__ModuleLoader__.load({
                       log("warn", "recall", "已有待处理撤回（单待定约束）");
                       return;
                     }
-                    // 极限场景：首条消息（含截断会话）——确认后按场景重置（家族→回父版本；无家族→空白顶替）
-                    if (isFirstUserMessage(props, myKey)) {
-                      setConfirming(true);
-                      return;
-                    }
+                    // v2.4.0：首条/截断场景交由宿主判定树（发送时 no-boundary/turn-open → resetConversation）
                     // review M5：存在编辑待定 → 丢弃编辑草稿转撤回（与编辑态操作区撤回键同语义）
                     if (pending && pending.type === "edit") {
                       writePending(sessionId, null);
