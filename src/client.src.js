@@ -495,7 +495,7 @@ window.__ModuleLoader__.load({
             var keepArr = Array.isArray(pending.preUserImageIds) ? pending.preUserImageIds : [];
             for (var kk = 0; kk < keepArr.length; kk++) keepSet[keepArr[kk]] = true;
             var curX = [];
-            var sX = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : null;
+            var sX = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : (props.inputState || null);
             if (sX && Array.isArray(sX.imageIds)) curX = sX.imageIds.slice();
             var removedAny = false;
             if (ia && typeof ia.removeImage === "function") {
@@ -2436,10 +2436,12 @@ window.__ModuleLoader__.load({
 
       // 渲染期读取输入框草稿（存 ref 供确认时使用）
       var draftRef = React.useRef("");
-      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : null;
-      if (inputState) draftRef.current = inputState.draft;
+      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : (props.inputState || null);
+      if (inputState) draftRef.current = typeof inputState.draft === "string" ? inputState.draft : "";
         // 镜像输入框当前图片 id（供撤回/编辑发送时精确搬运）
         try { if (Array.isArray(inputState.imageIds)) latestInputImageIds = inputState.imageIds.slice(); } catch (eMir) { /* ignore */ }
+        // v2.4.0：rc.1 input门面（props.inputState）的 imageIds 同步
+        try { if (props.inputState && Array.isArray(props.inputState.imageIds)) latestInputImageIds = props.inputState.imageIds.slice(); } catch (eMir2) { /* ignore */ }
 
       // 灰字气泡的原文预览展开态（simple/info 模式点击切换）
       var previewState = React.useState(false);
@@ -3036,7 +3038,7 @@ window.__ModuleLoader__.load({
                 // 快照用户确认前输入框已有的图（× 取消时保留；消息自身的图走 attachRefs）
                 var preUserImageIds = [];
                 try {
-                  var sPre = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : null;
+                  var sPre = typeof props.useInput === "function" ? props.useInput(function (q) { return q; }) : (props.inputState || null);
                   if (sPre && Array.isArray(sPre.imageIds)) preUserImageIds = sPre.imageIds.slice();
                 } catch (e) { /* ignore */ }
                 writePending(sessionId, {
@@ -3222,13 +3224,24 @@ window.__ModuleLoader__.load({
             name: "conversation.chat.node",
             key: "user",
             priority: -1,
-            inject: function () {
+            inject: function (sessionId) {
+              // v2.4.0：chat.node 槽同样经 input 门面自取 inputActions（dsh 0.1.2 不再下发）
+              var inputShell2 = null;
+              try {
+                if (sessionId) {
+                  var scope2 = ctx.sessions.scope(sessionId);
+                  var conv2 = scope2 ? scope2.get("conversation") : null;
+                  if (conv2 && conv2.input && typeof conv2.input.for === "function") inputShell2 = conv2.input.for(scope2);
+                }
+              } catch (eSh2) { inputShell2 = null; }
               return {
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
                 ctxSessions: ctx.sessions,
                 modelSel: modelSel,
                 modelDirectories: ctx.modelDirectories,
+                inputActions: inputShell2 && inputShell2.actions ? inputShell2.actions : null,
+                inputState: inputShell2,
                 restoreSession: function (id) {
                   return fetch("/bubble/unarchive", {
                     method: "POST",
@@ -3251,12 +3264,26 @@ window.__ModuleLoader__.load({
             name: "conversation.input.dock",
             id: "dsh-easyrewrite-recall-banner",
             order: -10,
-            inject: function () {
+            inject: function (sessionId) {
+              // v2.4.0：dsh 0.1.2 起宿主不再下发 inputActions——经 input 门面自取（方法名与旧 inputActions 完全一致）
+              var actx = null, inputShell = null;
+              try {
+                if (typeof ctx.sessions.scope === "function" && sessionId) {
+                  var scope = ctx.sessions.scope(sessionId);
+                  var conversationSvc = scope ? scope.get("conversation") : null;
+                  if (conversationSvc && conversationSvc.input && typeof conversationSvc.input.for === "function") {
+                    inputShell = conversationSvc.input.for(scope);
+                  }
+                }
+              } catch (eShell) { inputShell = null; }
               return {
+                sessionId: sessionId,
                 openSession: function (id) { ctx.sessions.open(id); },
                 ctxWorkspaces: ctx.workspaces,
                 ctxSessions: ctx.sessions,
                 modelSel: modelSel,
+                inputActions: inputShell && inputShell.actions ? inputShell.actions : null,
+                inputState: inputShell || null,
                 restoreSession: function (id) {
                   return fetch("/bubble/unarchive", {
                     method: "POST",
