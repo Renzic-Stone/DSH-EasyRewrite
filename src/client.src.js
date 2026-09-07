@@ -1178,7 +1178,8 @@ window.__ModuleLoader__.load({
         enableNow: "一键开启",
         remindIgnore: "不再显示",
         copyUpgradeCmd: "复制升级命令",
-        dragHint: "松开鼠标，图片将加入正在编辑的气泡（如需发送到下方输入框，请先取消编辑）",
+        dzFull: "拖入此处添加图片至正在编辑的消息",
+        dzCompact: "插入图片",
         showOriginalImages: "撤回待定时查看原文显示图片"
       },
       en: {
@@ -1269,7 +1270,8 @@ window.__ModuleLoader__.load({
         enableNow: "Enable",
         remindIgnore: "Don't show again",
         copyUpgradeCmd: "Copy upgrade command",
-        dragHint: "Drop to add the image to the bubble being edited (to send via the composer below, cancel the edit first)",
+        dzFull: "Drop to add images to the message being edited",
+        dzCompact: "Insert image",
         showOriginalImages: "Show images when viewing original text while pending"
       },
       ja: {
@@ -1360,7 +1362,8 @@ window.__ModuleLoader__.load({
         enableNow: "有効にする",
         remindIgnore: "今後表示しない",
         copyUpgradeCmd: "アップグレードコマンドをコピー",
-        dragHint: "ドロップで編集中のバブルに画像を追加（下の入力欄へ送る場合は先に編集をキャンセル）",
+        dzFull: "ドロップして編集中のメッセージに画像を追加",
+        dzCompact: "画像を挿入",
         showOriginalImages: "取り消し待ちの原文表示で画像を表示"
       }
     };
@@ -1556,6 +1559,11 @@ window.__ModuleLoader__.load({
       var sCustom = React.useState(String(editWidthCustom()));
       var customW = sCustom[0];
       var setCustomW = sCustom[1];
+      // review A1-5：showOriginalImages 开关的 hook 必须在顶层无条件调用——原先包在 open? 分支内的 IIFE 里，
+      // 展开卡片瞬间 hook 数 +1 → React #300 → 设置卡片点不开（2b94851 引入，2026-09-04 用户实测复现）
+      var sOrigImg = React.useState(showOriginalImages());
+      var origImg = sOrigImg[0];
+      var setOrigImg = sOrigImg[1];
 
       // 官方 PluginCard 同款：卡片/展开态/头部/标题/描述/箭头/内容区
       var cardStyle = {
@@ -1760,12 +1768,7 @@ window.__ModuleLoader__.load({
           React.createElement("div", { style: sectionStyle },
             React.createElement("span", { style: groupTitleStyle }, L.sectionRecall),
             switchRow(L.recallConfirm, confirmCapsule, function (v) { setConfirmCapsule(v); setBool("dsh-easyrewrite:recallConfirm", v); }),
-            (function () {
-              var sOrigImg = React.useState(showOriginalImages());
-              var origImg = sOrigImg[0];
-              var setOrigImg = sOrigImg[1];
-              return switchRow(L.showOriginalImages, origImg, function (v) { setOrigImg(v); setBool("dsh-easyrewrite:showOriginalImages", v); });
-            })(),
+            switchRow(L.showOriginalImages, origImg, function (v) { setOrigImg(v); setBool("dsh-easyrewrite:showOriginalImages", v); }),
             // 视觉模式
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.visualMode),
@@ -2502,6 +2505,16 @@ window.__ModuleLoader__.load({
       var sEditSel = React.useState(null); // 编辑态模型选择（null=未动 chip → 维持 v2.1.1 捕获语义）
       var editSel = sEditSel[0];
       var setEditSel = sEditSel[1];
+      // 拖入虚线框（dropzone）：dzActive=文件拖拽在窗口内（灰虚线框+毛玻璃浮现）；dzOver=光标悬停在图片预览容器上（变蓝高亮）
+      var sDzActive = React.useState(false);
+      var dzActive = sDzActive[0];
+      var setDzActive = sDzActive[1];
+      var sDzOver = React.useState(false);
+      var dzOver = sDzOver[0];
+      var setDzOver = sDzOver[1];
+      var dzActiveRef = React.useRef(false); // 事件回调内读最新值（避免闭包旧态）
+      var dzOverRef = React.useRef(false);
+      var dzWatchdogRef = React.useRef(0);   // 拖拽事件流中断兜底（2.5s 无事件自动复位，防卡死）
       /** 把当前编辑图片集合同步进 pending（含 dataUrl 字节快照；超限降级只丢字节、引用仍在） */
       function syncEditImgsToPending(items) {
         try {
@@ -2574,10 +2587,40 @@ window.__ModuleLoader__.load({
           try { var t = e.dataTransfer; return !!(t && t.types && Array.prototype.indexOf.call(t.types, "Files") !== -1); } catch (eT) { return false; }
         }
         function suppress(e) { e.preventDefault(); e.stopPropagation(); }
-        function onDragEnter(e) { if (looksLikeFileDrag(e)) suppress(e); }
-        function onDragOver(e) { if (looksLikeFileDrag(e)) suppress(e); }
+        function armWatchdog() {
+          try { if (dzWatchdogRef.current) clearTimeout(dzWatchdogRef.current); } catch (eW) { /* ignore */ }
+          dzWatchdogRef.current = setTimeout(function () {
+            dzActiveRef.current = false; dzOverRef.current = false;
+            setDzActive(false); setDzOver(false);
+          }, 2500);
+        }
+        function onDragEnter(e) {
+          if (!looksLikeFileDrag(e)) return;
+          suppress(e);
+          armWatchdog();
+          if (!dzActiveRef.current) { dzActiveRef.current = true; setDzActive(true); }
+          // 悬停判定：dragover 事件 target 即光标下元素，closest 命中图片预览容器 → 变蓝
+          var over = false;
+          try { over = !!(e.target && e.target.closest && e.target.closest("[data-easyrewrite-dropzone]")); } catch (eC) { /* ignore */ }
+          if (over !== dzOverRef.current) { dzOverRef.current = over; setDzOver(over); }
+        }
+        function onDragOver(e) {
+          if (!looksLikeFileDrag(e)) return;
+          suppress(e);
+          armWatchdog();
+          if (!dzActiveRef.current) { dzActiveRef.current = true; setDzActive(true); }
+          var over2 = false;
+          try { over2 = !!(e.target && e.target.closest && e.target.closest("[data-easyrewrite-dropzone]")); } catch (eC2) { /* ignore */ }
+          if (over2 !== dzOverRef.current) { dzOverRef.current = over2; setDzOver(over2); }
+        }
+        function dzReset() {
+          try { if (dzWatchdogRef.current) { clearTimeout(dzWatchdogRef.current); dzWatchdogRef.current = 0; } } catch (eW2) { /* ignore */ }
+          dzActiveRef.current = false; dzOverRef.current = false;
+          setDzActive(false); setDzOver(false);
+        }
         function onDrop(e) {
           suppress(e);
+          dzReset();
           try {
             var imgFiles = [];
             var dt = e.dataTransfer;
@@ -2607,13 +2650,24 @@ window.__ModuleLoader__.load({
             log("info", "edit", "拦截到拖入图片", { count: addedItems.length });
           } catch (eDr) { log("warn", "edit", "拖入拦截异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); }
         }
+        function onDragLeave(e) {
+          // 离开窗口（relatedTarget=null）→ 整体复位；跨元素边界的假离开交给 dragover 刷新
+          if (!looksLikeFileDrag(e)) return;
+          if (e.relatedTarget === null) dzReset();
+        }
         document.addEventListener("dragenter", onDragEnter, true);
         document.addEventListener("dragover", onDragOver, true);
         document.addEventListener("drop", onDrop, true);
+        document.addEventListener("dragleave", onDragLeave, true);
         return function () {
           document.removeEventListener("dragenter", onDragEnter, true);
           document.removeEventListener("dragover", onDragOver, true);
           document.removeEventListener("drop", onDrop, true);
+          document.removeEventListener("dragleave", onDragLeave, true);
+          // 编辑退出/组件卸载：清看门狗 + 复位虚线框状态（防下次进入编辑带残留）
+          try { if (dzWatchdogRef.current) { clearTimeout(dzWatchdogRef.current); dzWatchdogRef.current = 0; } } catch (eC3) { /* ignore */ }
+          dzActiveRef.current = false; dzOverRef.current = false;
+          setDzActive(false); setDzOver(false);
         };
       }, [editing]);
 
@@ -2876,6 +2930,15 @@ window.__ModuleLoader__.load({
       }
       if (editing) {
         var editMode = editWidthMode();
+        // 拖入虚线框 fade-in 动画（官方 DropOverlay 同款 .16s ease-out；幂等注入一次；尊重 reduced-motion）
+        try {
+          if (typeof document !== "undefined" && document.querySelector("style[data-dsh-easyrewrite-dz]") === null) {
+            var dzSt = document.createElement("style");
+            dzSt.setAttribute("data-dsh-easyrewrite-dz", "1");
+            dzSt.textContent = "@keyframes dshEasyRewriteDzFadeIn{0%{opacity:0}to{opacity:1}}@media (prefers-reduced-motion:reduce){[data-easyrewrite-dropzone-overlay]{animation:none}}";
+            document.head.appendChild(dzSt);
+          }
+        } catch (eDzSt) { /* ignore */ }
         var editBoxW = editWidthFor(editMode, editText, bubbleInitW);
         var lineCount = (editText.match(/\n/g) || []).length + 1;
         var taRows = Math.max(1, Math.min(20, lineCount));
@@ -2955,14 +3018,70 @@ window.__ModuleLoader__.load({
             },
             onDragOver: function (e) { e.preventDefault(); e.stopPropagation(); }
           },
-        React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "6px" } },
-          editImages.map(function(ei, eiIdx) {
-            return React.createElement("div", { key: ei.id, style: { position: "relative", width: "72px", height: "72px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))" } },
-              React.createElement("img", { src: ei.url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
-              React.createElement("button", { type: "button", onClick: function(ev) { ev.stopPropagation(); var nxtRm = editImagesRef.current.filter(function(x) { return x.id !== ei.id; }); setEditImages(nxtRm); syncEditImgsToPending(nxtRm); }, style: { position: "absolute", top: "2px", right: "2px", width: "18px", height: "18px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: "12px", lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: "0" }, title: "移除图片" }, "\u00d7")
-            );
-          })
-        ),
+        (function () {
+          // 拖入虚线框（dropzone）：dzActive=文件拖拽在窗口内 → 虚线框+毛玻璃浮现；dzOver=光标悬停框内 → 蓝框高亮。
+          // 同布局双尺寸模型（用户定稿）：平时与拖入态都是"与输入框等宽的 4 张/行"，差别只在图片尺寸——
+          // 平时 padding 0（图片行与输入框左右边缘齐平、尺寸最大）；拖入时框 border 3px+padding 5px 11px 出现，
+          // 图片整体微缩进框内（每张缩 ~7px，发生在毛玻璃浮现的 0.16s 里 → "透视收缩+视觉中心转移"效果）。
+          // 透明虚线边框两态常驻占位（几何稳定）；覆盖层 pointerEvents:none 纯装饰，事件只在 document 捕获层。
+          var dzShow = dzActive;
+          var hasImgs = editImages.length > 0;
+          if (!hasImgs && !dzShow) return null; // 无图且未拖入：不占任何空间
+          var dzGrey = "rgba(128,128,128,0.45)";
+          var dzBlue = "var(--dsw-static-deepseek-500, #4d6bfe)";
+          var dzBorder = 3, dzPadX = 11, dzGap = 6;
+          // 缩略图尺寸：内容宽 = 框宽 − 常驻透明边框 6px −（拖入态再加内边距 22px）；4 张均分，第 5 张起换行；
+          // 扩展/自定义 = 固定 77px 平铺（大小与标准档扩大后一致，铺满整行再换行——用户实测口径）
+          var dzThumbUsual = Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 3 * dzGap) / 4));
+          var dzThumbDrag = Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 2 * dzPadX - 3 * dzGap) / 4));
+          var thumbSize = dzShow ? dzThumbDrag : dzThumbUsual;
+          // 无图占位框：比一张图略大（拖入态图高 + 上下各留 8px 空）
+          var dzMinH = !hasImgs ? dzThumbDrag + 16 : void 0;
+          return React.createElement(
+            "div", {
+              "data-easyrewrite-dropzone": "1",
+              style: {
+                position: "relative",
+                width: "100%", maxWidth: editBoxW, boxSizing: "border-box",
+                display: "flex", flexWrap: "wrap", gap: dzGap + "px", alignItems: "flex-start",
+                padding: dzShow ? "5px " + dzPadX + "px" : "0px",
+                marginBottom: "6px",
+                minHeight: dzMinH,
+                borderRadius: "16px",
+                border: dzBorder + "px dashed " + (dzShow ? (dzOver ? dzBlue : dzGrey) : "transparent"),
+                transition: "border-color .12s ease, padding .15s ease"
+              }
+            },
+            editImages.map(function(ei, eiIdx) {
+              // boxSizing:border-box：1px 边框计入 thumbSize（content-box 下每张多占 2px，会挤走第 4 张——已踩坑）
+              return React.createElement("div", { key: ei.id, style: { position: "relative", boxSizing: "border-box", width: thumbSize + "px", height: thumbSize + "px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))", transition: "width .15s ease, height .15s ease" } },
+                React.createElement("img", { src: ei.url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
+                React.createElement("button", { type: "button", onClick: function(ev) { ev.stopPropagation(); var nxtRm = editImagesRef.current.filter(function(x) { return x.id !== ei.id; }); setEditImages(nxtRm); syncEditImgsToPending(nxtRm); }, style: { position: "absolute", top: "2px", right: "2px", width: "18px", height: "18px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: "12px", lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: "0" }, title: "移除图片" }, "\u00d7")
+              );
+            }),
+            dzShow ? React.createElement(
+              "div", {
+                "data-easyrewrite-dropzone-overlay": "1",
+                style: {
+                  position: "absolute", inset: "0",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  borderRadius: "13px",
+                  background: dzOver ? "rgba(77,107,254,0.10)" : "rgba(128,128,128,0.06)",
+                  backdropFilter: "blur(12px)",
+                  WebkitBackdropFilter: "blur(12px)",
+                  pointerEvents: "none",
+                  zIndex: 5,
+                  boxSizing: "border-box",
+                  animation: "dshEasyRewriteDzFadeIn 0.16s ease-out",
+                  transition: "background-color .12s ease"
+                }
+              },
+              React.createElement("div", { style: { color: dzOver ? dzBlue : "rgba(128,128,128,0.85)", fontSize: "13px", lineHeight: "20px", fontWeight: 500, padding: "0 12px", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" } },
+                editMode === "compact" ? L.dzCompact : L.dzFull
+              )
+            ) : null
+          );
+        })(),
           React.createElement(
             "div", { style: editBoxStyle },
             hasUnpreservable ? React.createElement("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-warning, #b7791f)", marginBottom: "6px", lineHeight: "1.5" } }, L.attachWarning) : null,
