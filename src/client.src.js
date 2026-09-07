@@ -982,7 +982,8 @@ window.__ModuleLoader__.load({
      * - 两档超过一行后都保持宽度不再主动扩张（高度自然换行增长）。
      */
     function editWidthFor(mode, text, initW) {
-      if (mode === "extended") return 748;              // 扩展：顶满
+      // 扩展："100%" 撑满消息行（此前写死 748px 是旧窗口宽度遗物——内容列更宽时左侧够不到其他文字的左对齐线，2026-09-04 用户实测反馈）
+      if (mode === "extended") return "100%";
       if (mode === "custom") return editWidthCustom();  // 自定义
       var linesArr = String(text || "").split("\n");
       var contentW = 0;
@@ -3031,9 +3032,11 @@ window.__ModuleLoader__.load({
           var dzBlue = "var(--dsw-static-deepseek-500, #4d6bfe)";
           var dzBorder = 3, dzPadX = 11, dzGap = 6;
           // 缩略图尺寸：内容宽 = 框宽 − 常驻透明边框 6px −（拖入态再加内边距 22px）；4 张均分，第 5 张起换行；
-          // 扩展/自定义 = 固定 77px 平铺（大小与标准档扩大后一致，铺满整行再换行——用户实测口径）
-          var dzThumbUsual = Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 3 * dzGap) / 4));
-          var dzThumbDrag = Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 2 * dzPadX - 3 * dzGap) / 4));
+          // 扩展/自定义 = 固定尺寸平铺（铺满整行再换行，大小与标准档公式值一致：平时84/拖入78——b1cee35 重写时曾丢失此分支致扩展模式图片 180px 过大）
+          var dzFixedUsual = Math.max(44, Math.floor((360 - 2 * dzBorder - 3 * dzGap) / 4));
+          var dzFixedDrag = Math.max(44, Math.floor((360 - 2 * dzBorder - 2 * dzPadX - 3 * dzGap) / 4));
+          var dzThumbUsual = (editMode === "extended" || editMode === "custom") ? dzFixedUsual : Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 3 * dzGap) / 4));
+          var dzThumbDrag = (editMode === "extended" || editMode === "custom") ? dzFixedDrag : Math.max(44, Math.floor((editBoxW - 2 * dzBorder - 2 * dzPadX - 3 * dzGap) / 4));
           var thumbSize = dzShow ? dzThumbDrag : dzThumbUsual;
           // 无图占位框：比一张图略大（拖入态图高 + 上下各留 8px 空）
           var dzMinH = !hasImgs ? dzThumbDrag + 16 : void 0;
