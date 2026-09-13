@@ -829,6 +829,76 @@ window.__ModuleLoader__.load({
         }
       }
 
+      // 稳健读取输入框当前文本：DOM 物理渲染优先 + projection 编辑器层 + state 快照兜底
+      function readCurrentComposerText(fallbackText) {
+        var domVal = "";
+        var projVal = "";
+        var snapVal = "";
+        var ishell = props.inputState || null;
+
+        // 1) DOM 物理读取（最高优先级）：直接获取用户在页面中实时敲入的内容（兼容 contenteditable 与 textarea）
+        try {
+          var el = document.querySelector([
+            "[data-input-scroll] [contenteditable='true']",
+            "[data-input-scroll] textarea",
+            "[data-composer-card='true'] [contenteditable='true']",
+            "[data-composer-card='true'] textarea",
+            "[contenteditable='true']",
+            "textarea"
+          ].join(","));
+          if (el) {
+            if (el.isContentEditable || el.getAttribute("contenteditable") === "true") {
+              var t = typeof el.innerText === "string" ? el.innerText : (el.textContent || "");
+              domVal = t.replace(/\r?\n$/g, "");
+            } else if (typeof el.value === "string") {
+              domVal = el.value;
+            }
+          }
+        } catch (eDom) { /* ignore */ }
+
+        // 2) 官方 Lexical 编辑器 projection 剪贴板文本
+        try {
+          if (ishell && ishell.projection && typeof ishell.projection.clipboardText === "string") {
+            projVal = ishell.projection.clipboardText;
+          }
+        } catch (eProj) { /* ignore */ }
+
+        // 3) 官方 state 快照（注意：打字过程中官方并未调用 publish，仅初次 setDraft 时落入）
+        try {
+          if (ishell && ishell.state && typeof ishell.state.getSnapshot === "function") {
+            var snap = ishell.state.getSnapshot();
+            if (snap && typeof snap.draft === "string") snapVal = snap.draft;
+          } else if (ishell && typeof ishell.draft === "string") {
+            snapVal = ishell.draft;
+          }
+        } catch (eSnap) { /* ignore */ }
+
+        var chosen = fallbackText;
+        var source = "fallback";
+
+        if (domVal !== "") {
+          chosen = domVal;
+          source = "dom";
+        } else if (projVal !== "") {
+          chosen = projVal;
+          source = "projection";
+        } else if (snapVal !== "") {
+          chosen = snapVal;
+          source = "snapshot";
+        }
+
+        log("info", "recall", "输入框文本读取诊断", {
+          source: source,
+          chosenLen: typeof chosen === "string" ? chosen.length : 0,
+          domLen: domVal.length,
+          projLen: projVal.length,
+          snapLen: snapVal.length,
+          fallbackLen: typeof fallbackText === "string" ? fallbackText.length : 0
+        });
+
+        return chosen;
+      }
+
       var recallInFlight = false; // review M2：in-flight 锁，防 Enter/按钮并发重复 fork
       async function doRecallThenSend(p) {
         if (recallInFlight) return;
@@ -836,11 +906,7 @@ window.__ModuleLoader__.load({
         try {
           var sid = props.sessionId;
           // 读取输入框当前文本（用户可能已修改）：重置/重发都使用修改后的内容
-          var sendText = p.draftText;
-          try {
-            var ta = document.querySelector("[data-input-scroll] textarea");
-            if (ta && typeof ta.value === "string" && ta.value !== "") sendText = ta.value;
-          } catch (e) { /* ignore */ }
+          var sendText = readCurrentComposerText(p.draftText);
           // 极限场景判定（v2.4.0 改约）：窗口化快照上的 isFirstUserMessage 会误判（窗口起点=目标消息即误报首条），
           // 首条/截断场景统一交给宿主判定树——/bubble/recall 返回 no-boundary/turn-open 时再走 resetConversation。
           // 本地只保留快照可判时的提前短路（no-boundary）。
@@ -930,8 +996,14 @@ window.__ModuleLoader__.load({
         var p = pending;
         function onKeyDownCapture(e) {
           if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
-          var ta = document.querySelector("[data-input-scroll] textarea");
-          if (!ta || e.target !== ta) return;
+          var el = document.querySelector("[data-input-scroll] [contenteditable='true'], [data-input-scroll] textarea, [data-composer-card='true'] [contenteditable='true'], [data-composer-card='true'] textarea, textarea");
+          var isComposer = false;
+          if (el) {
+            isComposer = (e.target === el || el.contains(e.target));
+          } else if (e.target && (e.target.isContentEditable || e.target.tagName === "TEXTAREA")) {
+            isComposer = true;
+          }
+          if (!isComposer) return;
           e.preventDefault();
           e.stopPropagation();
           doRecallThenSend(p);
@@ -996,7 +1068,35 @@ window.__ModuleLoader__.load({
             if (savedIds.length > 0 && typeof ia.addImages === "function") {
               try { ia.addImages(savedIds); } catch (e) { log("warn", "attach", "addImages 异常（忽略，文字照发）", { err: String(e && e.message ? e.message : e) }); }
             }
-            var doSubmit = function () { setTimeout(function () { try { ia.submit(); log("info", "recall", "resume 已提交", { sessionId: sessionId }); } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); } }, 60); };
+            var doSubmit = function () {
+              setTimeout(function () {
+                try {
+                  ia.submit();
+                  log("info", "recall", "resume 已提交", { sessionId: sessionId });
+                  // Phase 2：底部暂存草稿及图片在新会话中回填保留（隔离发送，不混入气泡重发消息）
+                  if (r.stagedDraft && (r.stagedDraft.text || (Array.isArray(r.stagedDraft.imageIds) && r.stagedDraft.imageIds.length > 0))) {
+                    setTimeout(function () {
+                      try {
+                        var stg = r.stagedDraft;
+                        if (typeof stg.text === "string" && stg.text.length > 0 && typeof ia.setDraft === "function") {
+                          ia.setDraft(stg.text);
+                        }
+                        var stgImgs = Array.isArray(stg.imageIds) ? stg.imageIds : [];
+                        if (stgImgs.length > 0 && typeof ia.addImages === "function") {
+                          ia.addImages(stgImgs);
+                        }
+                        log("info", "recall", "resume 第二阶段：底部暂存草稿及图片已回填", {
+                          hasText: !!(stg.text && stg.text.length > 0),
+                          imgCount: stgImgs.length
+                        });
+                      } catch (eStg) {
+                        log("warn", "recall", "回填暂存草稿异常", { err: String(eStg && eStg.message ? eStg.message : eStg) });
+                      }
+                    }, 160);
+                  }
+                } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); }
+              }, 60);
+            };
             // v2.1.1：先把捕获的原模型/挡位写进新会话（官方 selectModel 持久化通道），再自动发送
             if (r.sel && props.modelSel) {
               props.modelSel.apply(sessionId, r.sel).then(doSubmit, doSubmit);
@@ -2156,7 +2256,7 @@ window.__ModuleLoader__.load({
      * @param text - edit 模式的修改后文本
      * @param props - 组件 inject 面
      */
-    function resetConversation(sessionId, mode, text, props, imageIds, selOverride) {
+    function resetConversation(sessionId, mode, text, props, imageIds, selOverride, stagedDraft) {
       log("info", "reset", "首条消息重置对话", { sessionId: sessionId, mode: mode });
       // v2.1.1：目标会话（父版本或空白新会话）发送前需要恢复当前模型/挡位
       // v2.2：气泡编辑 chip 的本地选择优先（selOverride），撤回键路径不传 → 原语义
@@ -2182,7 +2282,7 @@ window.__ModuleLoader__.load({
         var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
         if (parentId) {
           if (mode === "edit" && typeof text === "string") {
-            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel })); } catch (e) { /* ignore */ }
+            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
           }
           var doOpenParent = function () {
             if (typeof props.openSession === "function") props.openSession(parentId);
@@ -2214,7 +2314,7 @@ window.__ModuleLoader__.load({
           wsConnector.connectWorkspace(wsId).then(function (newId) {
             if (!newId) return;
             if (mode === "edit" && typeof text === "string") {
-              try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel })); } catch (e) { /* ignore */ }
+              try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
             }
             log("info", "reset", "空白新会话已就绪", { newId: newId, mode: mode });
             if (typeof props.openSession === "function") props.openSession(newId);
@@ -2228,7 +2328,23 @@ window.__ModuleLoader__.load({
                   if (ia2 && typeof ia2.setDraft === "function" && typeof ia2.submit === "function") {
                     clearInterval(timer2);
                     ia2.setDraft(text);
-                    var fireSubmit = function () { setTimeout(function () { try { ia2.submit(); } catch (e) { log("error", "reset", "空白会话自动发送失败", { err: String(e && e.message ? e.message : e) }); } }, 80); };
+                    var fireSubmit = function () {
+                      setTimeout(function () {
+                        try {
+                          ia2.submit();
+                          if (stagedDraft && (stagedDraft.text || (Array.isArray(stagedDraft.imageIds) && stagedDraft.imageIds.length > 0))) {
+                            setTimeout(function () {
+                              try {
+                                if (stagedDraft.text && typeof ia2.setDraft === "function") ia2.setDraft(stagedDraft.text);
+                                var sImgs = Array.isArray(stagedDraft.imageIds) ? stagedDraft.imageIds : [];
+                                if (sImgs.length > 0 && typeof ia2.addImages === "function") ia2.addImages(sImgs);
+                                log("info", "reset", "第二阶段：底部暂存草稿及图片已回填", { hasText: !!stagedDraft.text, imgCount: sImgs.length });
+                              } catch (eStgR) { /* ignore */ }
+                            }, 160);
+                          }
+                        } catch (e) { log("error", "reset", "空白会话自动发送失败", { err: String(e && e.message ? e.message : e) }); }
+                      }, 80);
+                    };
                     if (msel && props.modelSel) { props.modelSel.apply(newId, msel).then(fireSubmit, fireSubmit); } else { fireSubmit(); }
                     log("info", "reset", "编辑文本已自动发送", { newId: newId });
                     return;
@@ -2635,9 +2751,14 @@ window.__ModuleLoader__.load({
       var sDzOver = React.useState(false);
       var dzOver = sDzOver[0];
       var setDzOver = sDzOver[1];
+      var sDzBottomOver = React.useState(false); // 底部输入框悬停高亮
+      var dzBottomOver = sDzBottomOver[0];
+      var setDzBottomOver = sDzBottomOver[1];
       var dzActiveRef = React.useRef(false); // 事件回调内读最新值（避免闭包旧态）
       var dzOverRef = React.useRef(false);
+      var dzBottomOverRef = React.useRef(false);
       var dzWatchdogRef = React.useRef(0);   // 拖拽事件流中断兜底（2.5s 无事件自动复位，防卡死）
+      var stagedBottomImageIdsRef = React.useRef([]); // 气泡编辑期间拖入底部输入框的暂存图片 ID 列表
       /** 把当前编辑图片集合同步进 pending（含 dataUrl 字节快照；超限降级只丢字节、引用仍在） */
       function syncEditImgsToPending(items) {
         try {
@@ -2700,10 +2821,169 @@ window.__ModuleLoader__.load({
         })();
       }, [isEditPending]);
 
+      // 辅助：获取底部输入组件的操作栏/工具栏容器（包含模型选择、发送键等）
+      function getComposerToolbar(card) {
+        try {
+          if (!card) return null;
+          var btn = card.querySelector("button[aria-label*='发送'], button[aria-label*='Send'], button[data-send-button]");
+          if (!btn) {
+            var btns = card.querySelectorAll("button");
+            if (btns.length > 0) btn = btns[btns.length - 1];
+          }
+          if (btn) {
+            var cur = btn;
+            while (cur && cur.parentNode && cur.parentNode !== card) {
+              cur = cur.parentNode;
+            }
+            if (cur && cur.parentNode === card) return cur;
+          }
+        } catch (e) { /* ignore */ }
+        return null;
+      }
+
+      // 辅助：光标坐标判定是否在底部虚线框的矩形区域内（支持高度扩大后超出卡片上边缘时的精准命中）
+      function isPointInBottomDz(e) {
+        try {
+          if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") return false;
+          var ov = document.querySelector("[data-easyrewrite-bottom-dz]");
+          if (ov) {
+            var r = ov.getBoundingClientRect();
+            return (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom);
+          }
+        } catch (err) { /* ignore */ }
+        return false;
+      }
+
+      // 辅助：判定事件目标是否在输入框组件区域（排除底部的模型选择和发送键等 UI）
+      function isTargetInComposerInput(target) {
+        try {
+          if (!target) return false;
+          var card = target.closest("[data-composer-card='true']") || target.closest("[data-composer-card]");
+          if (!card) return false;
+          var toolbar = getComposerToolbar(card);
+          if (toolbar && (toolbar === target || toolbar.contains(target))) {
+            return false;
+          }
+          return true;
+        } catch (e) { return false; }
+      }
+
+      // 底部输入框 Dropzone 蒙层与输入框尺寸联动（气泡编辑拖拽时，输入框与虚线框同步按比例放大至 2.5x，严丝合缝贴合输入框组件内；不遮挡底部操作区）
+      React.useEffect(function () {
+        var card = document.querySelector("[data-composer-card='true']") || document.querySelector("[data-composer-card]");
+        var scrollEl = card ? card.querySelector("[data-input-scroll]") : document.querySelector("[data-input-scroll]");
+
+        function restoreInputBox() {
+          try {
+            var oldOv = document.querySelector("[data-easyrewrite-bottom-dz]");
+            if (oldOv && oldOv.parentNode) {
+              var pNode = oldOv.parentNode;
+              oldOv.remove();
+              if (pNode && pNode.dataset && pNode.dataset.easyrewriteOriginPos) {
+                pNode.style.position = pNode.dataset.easyrewriteOriginPos;
+                delete pNode.dataset.easyrewriteOriginPos;
+              }
+            }
+            if (scrollEl && scrollEl.dataset && scrollEl.dataset.easyrewriteOrigMinH !== undefined) {
+              scrollEl.style.minHeight = scrollEl.dataset.easyrewriteOrigMinH;
+              delete scrollEl.dataset.easyrewriteOrigMinH;
+              delete scrollEl.dataset.easyrewriteBaseH;
+            }
+          } catch (eR) { /* ignore */ }
+        }
+
+        if (!editing || !dzActive) {
+          restoreInputBox();
+          return;
+        }
+
+        if (!card) return;
+        var compStyle = window.getComputedStyle ? window.getComputedStyle(card) : null;
+        if (compStyle && compStyle.position === "static") {
+          card.dataset.easyrewriteOriginPos = card.style.position || "";
+          card.style.position = "relative";
+        }
+
+        // 1) 输入框组件本身协同平滑放大至 2.5x（严丝合缝扩展，杜绝悬浮超框）
+        if (scrollEl) {
+          if (!scrollEl.dataset.easyrewriteOrigMinH) {
+            scrollEl.dataset.easyrewriteOrigMinH = scrollEl.style.minHeight || "";
+            scrollEl.dataset.easyrewriteBaseH = String(Math.max(28, scrollEl.offsetHeight || 32));
+          }
+          var baseH = parseFloat(scrollEl.dataset.easyrewriteBaseH) || 32;
+          var targetH = Math.min(240, Math.max(80, Math.round(baseH * 2.5)));
+          scrollEl.style.transition = "min-height .15s ease";
+          scrollEl.style.minHeight = targetH + "px";
+        }
+
+        // 2) 测量底部工具栏（模型选择与发送键等）
+        var toolbar = getComposerToolbar(card);
+        var bottomGap = 44;
+        try {
+          if (toolbar) {
+            var cRect = card.getBoundingClientRect();
+            var tRect = toolbar.getBoundingClientRect();
+            if (tRect.top >= cRect.top && tRect.top < cRect.bottom) {
+              bottomGap = Math.max(36, Math.round(cRect.bottom - tRect.top));
+            }
+          }
+        } catch (eG) { /* ignore */ }
+
+        // 3) 虚线框严丝合缝贴合放大的输入框内部（从卡片顶部到工具栏上方，绝不超出输入框卡片）
+        var ov = card.querySelector("[data-easyrewrite-bottom-dz]");
+        if (!ov) {
+          ov = document.createElement("div");
+          ov.setAttribute("data-easyrewrite-bottom-dz", "1");
+          ov.style.position = "absolute";
+          ov.style.top = "6px";
+          ov.style.left = "8px";
+          ov.style.right = "8px";
+          ov.style.bottom = (bottomGap + 4) + "px";
+          ov.style.zIndex = "25";
+          ov.style.display = "flex";
+          ov.style.alignItems = "center";
+          ov.style.justifyContent = "center";
+          ov.style.borderRadius = "12px";
+          ov.style.boxSizing = "border-box";
+          ov.style.pointerEvents = "none";
+          ov.style.backdropFilter = "blur(14px)";
+          ov.style.webkitBackdropFilter = "blur(14px)";
+          ov.style.animation = "dshEasyRewriteDzFadeIn 0.16s ease-out";
+          ov.style.transition = "border-color .12s ease, background-color .12s ease, color .12s ease";
+          var txtSpan = document.createElement("span");
+          txtSpan.className = "dsh-easyrewrite-bottom-dz-text";
+          txtSpan.style.fontSize = "13.5px";
+          txtSpan.style.fontWeight = "500";
+          txtSpan.style.textAlign = "center";
+          txtSpan.style.padding = "0 14px";
+          txtSpan.style.maxWidth = "100%";
+          txtSpan.style.overflow = "hidden";
+          txtSpan.style.textOverflow = "ellipsis";
+          txtSpan.style.whiteSpace = "nowrap";
+          ov.appendChild(txtSpan);
+          card.appendChild(ov);
+        } else {
+          ov.style.top = "6px";
+          ov.style.bottom = (bottomGap + 4) + "px";
+        }
+        var dzBlue = "var(--dsw-static-deepseek-500, #4d6bfe)";
+        var dzGrey = "rgba(128,128,128,0.45)";
+        ov.style.border = "3px dashed " + (dzBottomOver ? dzBlue : dzGrey);
+        ov.style.background = dzBottomOver ? "rgba(77,107,254,0.10)" : "rgba(128,128,128,0.06)";
+        var spanEl = ov.querySelector(".dsh-easyrewrite-bottom-dz-text");
+        if (spanEl) {
+          spanEl.textContent = dzBottomOver ? "松开暂存至输入框（新对话中保留）" : "拖入此处暂存至输入框（新对话中保留）";
+          spanEl.style.color = dzBottomOver ? dzBlue : "rgba(128,128,128,0.85)";
+        }
+        return function () {
+          restoreInputBox();
+        };
+      }, [editing, dzActive, dzBottomOver]);
+
       // 编辑态：document 捕获级接管文件拖拽（bug①）。官方全屏提示层由 dsh-client-ui-attachment
       // 在 document 冒泡阶段以 dragenter/dragleave 计数驱动、drop 时才 reset——旧实现只拦 drop 且
       // stopPropagation，官方收不到任何后续事件 → 提示层永久卡死。现在 dragenter/dragover 一并在
-      // 捕获阶段拦下：提示层根本不出现；drop 只进编辑缩略图、不漏下方输入框。随编辑态启停。
+      // 捕获阶段拦下：提示层根本不出现；drop 按目标分流至编辑气泡或底部输入框暂存区。随编辑态启停。
       React.useEffect(function () {
         if (!editing) return;
         function looksLikeFileDrag(e) {
@@ -2713,8 +2993,8 @@ window.__ModuleLoader__.load({
         function armWatchdog() {
           try { if (dzWatchdogRef.current) clearTimeout(dzWatchdogRef.current); } catch (eW) { /* ignore */ }
           dzWatchdogRef.current = setTimeout(function () {
-            dzActiveRef.current = false; dzOverRef.current = false;
-            setDzActive(false); setDzOver(false);
+            dzActiveRef.current = false; dzOverRef.current = false; dzBottomOverRef.current = false;
+            setDzActive(false); setDzOver(false); setDzBottomOver(false);
           }, 2500);
         }
         function onDragEnter(e) {
@@ -2722,10 +3002,14 @@ window.__ModuleLoader__.load({
           suppress(e);
           armWatchdog();
           if (!dzActiveRef.current) { dzActiveRef.current = true; setDzActive(true); }
-          // 悬停判定：dragover 事件 target 即光标下元素，closest 命中图片预览容器 → 变蓝
+          // 悬停判定：气泡图片容器
           var over = false;
           try { over = !!(e.target && e.target.closest && e.target.closest("[data-easyrewrite-dropzone]")); } catch (eC) { /* ignore */ }
           if (over !== dzOverRef.current) { dzOverRef.current = over; setDzOver(over); }
+          // 悬停判定：底部输入框组件区域（坐标或 target，排除模型选择与发送键）
+          var bOver = false;
+          try { bOver = isPointInBottomDz(e) || isTargetInComposerInput(e.target); } catch (eBC) { /* ignore */ }
+          if (bOver !== dzBottomOverRef.current) { dzBottomOverRef.current = bOver; setDzBottomOver(bOver); }
         }
         function onDragOver(e) {
           if (!looksLikeFileDrag(e)) return;
@@ -2735,14 +3019,23 @@ window.__ModuleLoader__.load({
           var over2 = false;
           try { over2 = !!(e.target && e.target.closest && e.target.closest("[data-easyrewrite-dropzone]")); } catch (eC2) { /* ignore */ }
           if (over2 !== dzOverRef.current) { dzOverRef.current = over2; setDzOver(over2); }
+          var bOver2 = false;
+          try { bOver2 = isPointInBottomDz(e) || isTargetInComposerInput(e.target); } catch (eBC2) { /* ignore */ }
+          if (bOver2 !== dzBottomOverRef.current) { dzBottomOverRef.current = bOver2; setDzBottomOver(bOver2); }
         }
         function dzReset() {
           try { if (dzWatchdogRef.current) { clearTimeout(dzWatchdogRef.current); dzWatchdogRef.current = 0; } } catch (eW2) { /* ignore */ }
-          dzActiveRef.current = false; dzOverRef.current = false;
-          setDzActive(false); setDzOver(false);
+          dzActiveRef.current = false; dzOverRef.current = false; dzBottomOverRef.current = false;
+          setDzActive(false); setDzOver(false); setDzBottomOver(false);
         }
         function onDrop(e) {
           suppress(e);
+          var isBubble = false;
+          var isBottom = false;
+          try {
+            isBubble = !!(e.target && e.target.closest && e.target.closest("[data-easyrewrite-dropzone]"));
+            isBottom = isPointInBottomDz(e) || isTargetInComposerInput(e.target);
+          } catch (eCl) { /* ignore */ }
           dzReset();
           try {
             var imgFiles = [];
@@ -2754,6 +3047,24 @@ window.__ModuleLoader__.load({
               }
             }
             if (imgFiles.length === 0 || !ctxConversationRef || typeof ctxConversationRef.createDraftImages !== "function") return;
+
+            if (isBottom) {
+              // 分流 A：释放到底部输入框暂存区
+              var bImgs = ctxConversationRef.createDraftImages(imgFiles);
+              if (bImgs && bImgs.length > 0) {
+                var bIds = bImgs.map(function (im) { return im.id; });
+                if (props.inputActions && typeof props.inputActions.addImages === "function") {
+                  props.inputActions.addImages(bIds);
+                }
+                stagedBottomImageIdsRef.current = stagedBottomImageIdsRef.current.concat(bIds);
+                log("info", "edit", "图片已添加到底部输入框暂存区", { count: bIds.length, ids: bIds });
+              }
+              return;
+            }
+
+            if (!isBubble) return;
+
+            // 分流 B：释放到气泡编辑区（修改当前消息）
             var dImgs = ctxConversationRef.createDraftImages(imgFiles);
             var addedItems = dImgs.map(function (im) { return { id: im.id, url: im.previewUrl, dataUrl: null }; });
             // 异步补 dataUrl 字节快照（bug② 刷新后可重建）
@@ -2770,7 +3081,7 @@ window.__ModuleLoader__.load({
               })(addedItems[ai], imgFiles[ai]);
             }
             setEditImages(function (prev) { var nxt = prev.concat(addedItems); syncEditImgsToPending(nxt); return nxt; });
-            log("info", "edit", "拦截到拖入图片", { count: addedItems.length });
+            log("info", "edit", "拦截到拖入图片至气泡", { count: addedItems.length });
           } catch (eDr) { log("warn", "edit", "拖入拦截异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); }
         }
         function onDragLeave(e) {
@@ -2789,8 +3100,25 @@ window.__ModuleLoader__.load({
           document.removeEventListener("dragleave", onDragLeave, true);
           // 编辑退出/组件卸载：清看门狗 + 复位虚线框状态（防下次进入编辑带残留）
           try { if (dzWatchdogRef.current) { clearTimeout(dzWatchdogRef.current); dzWatchdogRef.current = 0; } } catch (eC3) { /* ignore */ }
-          dzActiveRef.current = false; dzOverRef.current = false;
-          setDzActive(false); setDzOver(false);
+          dzActiveRef.current = false; dzOverRef.current = false; dzBottomOverRef.current = false;
+          setDzActive(false); setDzOver(false); setDzBottomOver(false);
+          try {
+            var ovOld = document.querySelector("[data-easyrewrite-bottom-dz]");
+            if (ovOld && ovOld.parentNode) {
+              var pNode2 = ovOld.parentNode;
+              ovOld.remove();
+              if (pNode2 && pNode2.dataset && pNode2.dataset.easyrewriteOriginPos) {
+                pNode2.style.position = pNode2.dataset.easyrewriteOriginPos;
+                delete pNode2.dataset.easyrewriteOriginPos;
+              }
+            }
+            var scOld = document.querySelector("[data-input-scroll]");
+            if (scOld && scOld.dataset && scOld.dataset.easyrewriteOrigMinH !== undefined) {
+              scOld.style.minHeight = scOld.dataset.easyrewriteOrigMinH;
+              delete scOld.dataset.easyrewriteOrigMinH;
+              delete scOld.dataset.easyrewriteBaseH;
+            }
+          } catch (eRem) { /* ignore */ }
         };
       }, [editing]);
 
@@ -2936,6 +3264,7 @@ window.__ModuleLoader__.load({
         setEditText(text);
         setEditSel(null);
         setEditImages([]); // v2.4.0：每次进入编辑=干净起点（防反复进出叠加）
+        stagedBottomImageIdsRef.current = []; // 暂存列表重置
         log("info", "edit", "进入编辑态", { sessionId: sessionId, targetSeq: realSeq, initW: initWidth });
         // 带图编辑：把原消息图片桥接成 draft attachments（供编辑态预览和确认发送）
         try {
@@ -2991,8 +3320,27 @@ window.__ModuleLoader__.load({
           var editImgIds = editImages.map(function(x) { return x.id; });
           // v2.2：编辑态模型 chip 的本地选择优先；未动 chip → 维持 v2.1.1 捕获（输入框当前值）
           var msel = editSel || (props.modelSel ? props.modelSel.capture(sid) : null);
+
+          // 收集底部输入框暂存草稿（文本与图片）：新会话中隔离保留
+          var bDraftText = "";
+          try { bDraftText = readCurrentComposerText(""); } catch (eBT) { /* ignore */ }
+          var bImgIds = [];
+          try {
+            var curInState = props.inputState || null;
+            if (curInState && Array.isArray(curInState.imageIds)) {
+              bImgIds = curInState.imageIds.slice();
+            }
+          } catch (eBImgs) { /* ignore */ }
+          if (bImgIds.length === 0 && stagedBottomImageIdsRef.current.length > 0) {
+            bImgIds = stagedBottomImageIdsRef.current.slice();
+          }
+          var stagedDraftPayload = (bDraftText || (bImgIds && bImgIds.length > 0)) ? {
+            text: bDraftText,
+            imageIds: bImgIds
+          } : null;
+
           setEditing(false);
-          log("info", "edit", "确定：编辑重发", { sessionId: sid, targetSeq: realSeq, len: newText.length });
+          log("info", "edit", "确定：编辑重发", { sessionId: sid, targetSeq: realSeq, len: newText.length, hasStaged: !!stagedDraftPayload });
           var resp = await fetch("/bubble/recall", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -3007,7 +3355,7 @@ window.__ModuleLoader__.load({
               setEditing(false);
               setOpError(L.resetNotice);
               setTimeout(function () { setOpError(null); }, 5000);
-              resetConversation(sid, "edit", newText, props, editImgIds, editSel);
+              resetConversation(sid, "edit", newText, props, editImgIds, editSel, stagedDraftPayload);
             } else {
               // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容；显示可见原因
               setEditing(true);
@@ -3026,8 +3374,16 @@ window.__ModuleLoader__.load({
           }
           // 成功：清除 pending（编辑草稿已消费）
           if (isEditPending) writePending(sid, null);
-          // review M6：resume-send 带 TTL 时间戳；M4：图片附件引用随行（重发保留）
-          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: newText, t: Date.now(), imageIds: editImgIds, sel: msel })); } catch (e) { /* ignore */ }
+          // review M6：resume-send 带 TTL 时间戳；M4：图片附件引用随行（重发保留）；stagedDraft：新会话草稿隔离保留
+          try {
+            localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({
+              draftText: newText,
+              t: Date.now(),
+              imageIds: editImgIds,
+              sel: msel,
+              stagedDraft: stagedDraftPayload
+            }));
+          } catch (e) { /* ignore */ }
           try {
             if (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function") {
               // review M8：await + catch
