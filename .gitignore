@@ -12,3 +12,6 @@ backups/
 # OS
 .DS_Store
 Thumbs.db
+
+# local raw assets
+展示图包/
