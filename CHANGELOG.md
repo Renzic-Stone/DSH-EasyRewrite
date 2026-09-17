@@ -3,6 +3,31 @@
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 
+## [2.5.3] — 彻底根除 fork 幽灵队列重发缺陷 · 长对话置灰防重锁 · 拦截空窗补齐
+
+### 修复
+- **【P0核心修复】彻底根除 DSH 宿主 fork 继承悬空幽灵队列导致的“改完发旧消息、新消息积压排队”严重缺陷（关联 Issue #9, #10，特别感谢 @TowardsDawn 提供的详尽日志与分析！）**：
+  - **根因**：DSH 官方 `sessions.fork` 实现采用贪婪切片（`while (cut < log.length && log[cut]?.type !== "turn/start") cut++;`），在截断到 `turn/end` 时，会把 `turn/end` 之后、`turn/start` 之前用户发送目标消息产生的 `agent/inbox/spliced target=next-turn ... inserted` 入队事件一股脑克隆进新会话；而配对的出队消费事件发生在 `turn/start` 之后被截断丢弃，导致新会话底层天然遗留一条悬空的旧消息；新会话通过 `ia.submit()`（底层为 `this.submit("queue")`）提交修改后的新文本时被追加到队尾，引擎按 FIFO 消费队首的旧消息发给模型，造成“改完永远发旧消息、新消息留在排队区”；
+  - **防御**：在客户端新会话恢复发送（`resume-send`）核心咽喉要道处引入 `cleanGhostQueue` 流程，在调用 `ia.submit()` 之前，先主动检测新会话当前的队列快照（`session.getSnapshot().queue`），遍历调用官方 `updateQueue(item.id, { kind: "remove" })` 将 fork 继承的悬空幽灵项全数移除；待清理确认后才触发 `submit()`，确保新会话队列从 0 开始，新文本成为队首第一条被直接消费。
+- **全生命周期发送拦截与防击穿补齐（消除 Issue #9 快速连击/回车穿透风险）**：
+  - 引入组件级 `sendingRef` 状态锁，将捕获期拦截器（`keydown` 和 `click`）的生命周期与会话切换状态严格绑定；
+  - 拦截器在确认派发切换新会话之前持续有效，期间任何键盘 Enter 或按钮点击均全量吞噬（`e.preventDefault(); e.stopPropagation();`），坚决阻断任何穿透到底层原生 InputBar 的可能；
+  - `writePending(sid, null)` 延后至确认成功派发切换新会话后执行，消除原实现中提前解绑的百毫秒空窗期。
+- **彻底拔除旧会话 `resetConversation` 异步盲发残留**：
+  - 彻底删除重置对话逻辑中在旧会话内轮询调用 `props.inputActions.submit()` 的 `timer2` 定时器，消除由于旧会话尚未完全卸载或状态忙碌时将草稿错误压入旧会话排队区的隐患。
+- **会话切换通道多重降级与异常回滚保护**：
+  - 实现 `safeOpenSession` 工具函数，依次尝试 `props.openSession`、`props.ctxSessions.open` 与全局 `ctxUiWorkspaceRef.openSession`；若均失败，自动清理本地 `resume-send:` 标记并恢复可交互态，杜绝残留死锁。
+
+### 改进
+- **长对话撤回/重发等待反馈与发送按钮物理置灰锁**：
+  - 针对大对话/长上下文因 `sessions.fork` 耗时数秒导致的“静默等待”痛点，点击发送后立即为发送按钮添加禁用状态（`opacity: 0.45`、`pointer-events: none`、`disabled: true`、`cursor: not-allowed`）；
+  - 撤回条文案实时动态切换为「正在准备新会话…」（支持中/英/日多语言：`preparingSession`），给用户清晰明确的后台进度感知，杜绝焦虑导致的重复连击；
+  - 配备 15 秒超时自动解锁安全网，防止因极端异常导致按钮永久置灰。
+
+### 致谢
+- ❤️ 特别鸣谢 **GitHub Issue #9**（@tkhs101）与 **Issue #10**（@TowardsDawn）提交者！尤其感谢 @TowardsDawn 提供的详尽事件序列复现日志与底层机理剖析，为彻底拔除此缺陷提供了极其宝贵的现场依据！
+
+
 ## [2.5.2] — 修复无界 Promise 链内存泄漏 (OOM) · 优化备份与日志吞吐
 
 ### 修复

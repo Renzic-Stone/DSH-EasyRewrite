@@ -242,4 +242,11 @@ settings.section（或 settings.general.item）              ← 设置页
 - [ ] 5.1 npm 发布前检查（files/peerDeps/版本）并发布 v0.1.0
 - [ ] 5.2 本机 dsh plugin add 安装验证 + README 终稿 + tag v0.1.0
 
+### Phase 6 · 后续体验优化路线图（Roadmap / Backlog）
+- [ ] **6.1 长对话撤回/重发等待反馈与性能体验优化**（见 [docs/backlog-fork-loading-optimization.md](docs/backlog-fork-loading-optimization.md)）：
+  - 针对大事件树/长对话因 `sessions.fork` 耗时导致的“静默等待”痛点；
+  - 气泡「确定」与发送键增加 Loading 旋转态与 `disabled` 禁用（防二次重复点击）；
+  - 增加“正在生成新版本分支...”轻量过渡提示；
+  - 耗时链路细化打点与乐观过渡体验优化。
+
 **审核重点**：阶段划分是否合理？每阶段交付物是否够？git 分支/tag 约定是否满意？TODO 粒度是否合适？
