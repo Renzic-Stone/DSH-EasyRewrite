@@ -222,10 +222,14 @@ console.log('[Test 5] Issue #10 DSH fork 幽灵队列清理与防御验证...');
 // 5.1 静态源码结构检测
 assert.ok(srcCode.includes('var cleanGhostQueue = function ()'), 'src 中必须包含 cleanGhostQueue 函数');
 assert.ok(bundleCode.includes('cleanGhostQueue'), '编译产物中必须包含 cleanGhostQueue 逻辑');
+assert.ok(srcCode.includes('function requestCleanGhostQueue('), 'src 中必须包含 requestCleanGhostQueue 函数');
+assert.ok(bundleCode.includes('requestCleanGhostQueue'), '编译产物中必须包含 requestCleanGhostQueue 逻辑');
+assert.ok(srcCode.includes('/bubble/clean-ghost'), 'src 中必须调用 /bubble/clean-ghost 路由');
 assert.ok(srcCode.includes('kind: "remove"'), 'cleanGhostQueue 必须使用 kind: "remove" 清理队列');
 assert.ok(srcCode.includes('updateQueue: function (itemId, action)'), 'inject 必须包含 updateQueue 接口');
 
-// 5.2 动态模拟：幽灵队列存在时的清除与发送时序
+// 5.2 动态模拟：Host 端与 Client 端双重拦截幽灵队列
+const hostCleanedSessions = [];
 const removedItems = [];
 const mockSession = {
   sessionId: 'session-fork-child',

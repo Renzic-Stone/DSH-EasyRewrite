@@ -114,3 +114,44 @@ console.log('\nAll smoke tests passed ✔');
   assert.equal(r.code, 'session-not-found', '未知会话应 404');
   console.log('✓ 未知会话 → session-not-found');
 }
+
+// 11) cleanGhostInbox：Host 端幽灵消息精准拔除与清空兜底
+{
+  const removedIds = [];
+  let clearCalled = false;
+  const mockAgent = {
+    inbox: {
+      nextTurn: [{ id: 'msg-ghost-1' }, { id: 'msg-ghost-2' }],
+      nextStep: [{ id: 'msg-ghost-step-1' }],
+      get hasPending() { return this.nextTurn.length > 0 || this.nextStep.length > 0; },
+      remove: (id) => {
+        removedIds.push(id);
+        mockAgent.inbox.nextTurn = mockAgent.inbox.nextTurn.filter((x) => x.id !== id);
+        mockAgent.inbox.nextStep = mockAgent.inbox.nextStep.filter((x) => x.id !== id);
+        return true;
+      },
+      clear: () => {
+        clearCalled = true;
+        mockAgent.inbox.nextTurn = [];
+        mockAgent.inbox.nextStep = [];
+      }
+    }
+  };
+  const ctx = {
+    agents: {
+      get: (sid) => (sid === 'session-forked-123' ? mockAgent : null)
+    }
+  };
+
+  const res = __test.cleanGhostInbox(ctx, 'session-forked-123');
+  assert.equal(res.cleared, 3, '应成功移除 3 条幽灵消息');
+  assert.deepEqual(res.removedIds, ['msg-ghost-1', 'msg-ghost-2', 'msg-ghost-step-1'], '被移除 ID 应完全吻合');
+  assert.equal(mockAgent.inbox.hasPending, false, '清理后 inbox 应无任何 pending');
+  console.log('✓ cleanGhostInbox 精准拔除与 inbox 清空验证通过');
+
+  // 健壮性：未知会话不报错
+  const resUnknown = __test.cleanGhostInbox(ctx, 'session-none');
+  assert.equal(resUnknown.cleared, 0);
+  assert.deepEqual(resUnknown.removedIds, []);
+  console.log('✓ cleanGhostInbox 未知会话容错验证通过');
+}

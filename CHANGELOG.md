@@ -3,6 +3,21 @@
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 
+## [2.5.4] — Host 端直接清除 fork 继承幽灵队列 · 彻底终结排队发送旧消息缺陷
+
+### 修复
+- **【P0终极根治】Host 端直接物理拔除 `agent.inbox` 幽灵队列（彻底解决 Issue #9, #10，由 @TowardsDawn 极其严谨的三连对账日志验证并推动）**：
+  - **根本机理阐明**：在 v2.5.3 中尝试在客户端读取 `session.getSnapshot().queue` 并调用 `updateQueue`，实测发现读取结果始终为 `[]`（失败率 3/3）。经过对 DSH 底层架构的深度核查，确认前端的 `queue` 快照由 WebSocket 的 `type: "queue"` 控制帧实时填充；而会话通过 `fork` 诞生时，贪婪继承的 `agent/inbox/spliced` 是作为历史种子（seed）灌入的，并不会触发 Live 控制帧广播，导致客户端读取快照始终为空，清理分支从未触发；
+  - **真凶驻留位置**：贪婪复制的旧消息实际硬生生驻留在 Host 进程端的 `agent.inbox.nextTurn` 待办队列中；
+  - **Host 端硬核拔除**：Host 端正式注入 `agents` 服务，新增 `POST /bubble/clean-ghost` 专属接口，直接通过 `ctx.agents.get(sessionId).inbox` 执行遍历 `remove(messageId)` 与 `clear()`，向底层会话追加规范的 `removedCount` 与 `outcome: "canceled"` 事件流，将幽灵队列在物理内存与持久化存储中连根拔起；
+  - **双重拦截闭环**：
+    1. **拦截点一（fork 产生瞬间）**：在 `doRecallThenSend` 与 `confirmEdit` 中，`props.ctxSessions.fork(...)` 返回新会话 ID 后，立即异步请求 Host 端的 `/bubble/clean-ghost`，新会话刚诞生即当场杀毒；
+    2. **拦截点二（resume 发送前）**：在 `resume-send` 挂载就绪后、调用 `ia.submit()` 之前，再次请求 Host 端兜底清空幽灵队列，确保新消息入队时严格排在队首第一位（`start=0`），模型当即消费新消息！
+
+### 致谢
+- ❤️ 再次由衷感谢 @TowardsDawn 针对 v2.5.3 提供的严密事件流对账记录（`10c01c7f` / `5278eb6c` / `a7184acc` 三连实验），精准指出了前端快照读空的根本断点，为本次 Host 端彻底拔除提供了关键指引！
+
+
 ## [2.5.3] — 彻底根除 fork 幽灵队列重发缺陷 · 长对话置灰防重锁 · 拦截空窗补齐
 
 ### 修复
