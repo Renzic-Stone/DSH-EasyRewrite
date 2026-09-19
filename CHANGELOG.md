@@ -3,6 +3,24 @@
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 
+## [2.5.5] — 气泡接入官方字号变量 · 兼容第三方批注插件 · 严格守护1080p协调比例
+
+### 改进 & 兼容性
+- **【生态兼容】气泡节点补充类名，完美兼容第三方批注插件（解决 Issue #11，特别鸣谢 @SDUTNB 反馈！）**：
+  - 为用户自绘气泡 div 节点显式补充 `className: "dsh-easyrewrite-bubble"`（包含 `bubble` 关键字）；
+  - 彻底解决搭配 `@changfenhuang/dsh-annotation`（批注插件）使用时，其 DOM 选择器 `row.querySelector('[class*="bubble"]')` 匹配落空导致原始批注块无法折叠隐藏的问题，实现批注块优雅裁切与折叠。
+- **【样式变量对齐】用户气泡与编辑框正文字号/行高接入官方 CSS 变量**：
+  - 将写死的 `fontSize: "14px"` 与 `lineHeight: "22px"` 替换为带默认回退的官方变量：
+    - `fontSize: "var(--dsh-content-font-size, 14px)"`
+    - `lineHeight: "calc(22px + var(--dsh-content-font-delta, 0px))"`
+  - 同步应用于普通气泡（`bubbleStyle`）、撤回待定灰色气泡（`grayBubbleStyle`）以及气泡编辑框（`taStyle`），当用户在 DSH 设置中调整全局字号（如 17px）时，气泡能够等比平滑缩放，与助手回复完美对齐。
+- **【1080p视觉守护】坚守原生协调比例，拒绝过度修改**：
+  - 严格保留用户经过精细调优的 `borderRadius: "14px"` 与 `padding: "8px 14px"`，不盲从扩大气泡外形，坚决守护默认 1080p 分辨率下的紧凑节奏与优雅视觉美感。
+
+### 致谢
+- ❤️ 特别感谢 **@SDUTNB** 在多插件真实生产环境（高字号 + 批注插件协同）下的详尽反馈与精准定位！
+
+
 ## [2.5.4] — Host 端直接清除 fork 继承幽灵队列 · 彻底终结排队发送旧消息缺陷
 
 ### 修复
