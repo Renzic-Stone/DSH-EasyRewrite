@@ -47,6 +47,31 @@ function apply(ctx) {
       initAutoUpdateCheck();
     });
 
+    // 注入插件卡片图标饱满度增强样式（摆脱官方 36px 缩小限制，适配 48px 外框）
+    safeRun("icon-style", () => {
+      try {
+        const styleId = "dsh-easyrewrite-icon-style";
+        if (typeof document !== "undefined" && !document.getElementById(styleId)) {
+          const style = document.createElement("style");
+          style.id = styleId;
+          style.textContent = `
+            [data-plugin-package="dsh-easyrewrite"] [class*="cardIcon"] img,
+            [data-plugin-detail="dsh-easyrewrite"] [class*="cardIcon"] img {
+              width: 42px !important;
+              height: 42px !important;
+              max-width: 42px !important;
+              max-height: 42px !important;
+              object-fit: contain;
+            }
+          `;
+          document.head.appendChild(style);
+          disposers.push(() => {
+            try { style.remove(); } catch (e) {}
+          });
+        }
+      } catch (e) {}
+    });
+
     // 1. 注册顶级包配置（plugins.bundle.config）
     safeRun("bundle-config", () => {
       if (ctx && ctx.slots && typeof ctx.slots.inject === "function") {
