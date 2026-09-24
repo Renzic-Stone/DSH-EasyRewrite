@@ -1,6 +1,7 @@
 
 import * as React from "react";
 import { formatClock } from "../../core/ui.js";
+import { useUILocaleDict } from "../../core/i18n.js";
 
     function ConfirmCapsule({ text, onConfirm, onCancel }) {
       var L = useUILocaleDict();

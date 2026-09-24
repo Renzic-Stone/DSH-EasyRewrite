@@ -1,13 +1,14 @@
 import * as React from "react";
 import { log } from "../../core/log.js";
 import { useUILocaleDict } from "../../core/i18n.js";
-import { recallVisualMode, draftConflictMode } from "../../core/constants.js";
+import { recallVisualMode, draftConflictMode, hasChatSnapshot, getChatSnapshot } from "../../core/constants.js";
 import { formatClock } from "../../core/ui.js";
 import { usePending, readPending, writePending } from "./store.js";
-import { barApplyTune, barApplyCircTune } from "./tune.js";
+import { barApplyTune, barApplyCircTune, barTune } from "./tune.js";
 import { safeOpenSession } from "./safe-session.js";
+import { resetConversation } from "../history/pager.js";
 import { requestCleanGhostQueue } from "./ghost.js";
-import { findPrimaryButton, isStopButton, setPrimaryButtonSendingState } from "./buttons.js";
+import { findPrimaryButton, isStopButton, setPrimaryButtonSendingState, readCurrentComposerText } from "./buttons.js";
 import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "../bubble/attachments.js";
 
     function RecallBanner(props) {
@@ -320,76 +321,6 @@ import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "..
         }
       }
 
-      // 稳健读取输入框当前文本：DOM 物理渲染优先 + projection 编辑器层 + state 快照兜底
-      function readCurrentComposerText(fallbackText) {
-        var domVal = "";
-        var projVal = "";
-        var snapVal = "";
-        var ishell = props.inputState || null;
-
-        // 1) DOM 物理读取（最高优先级）：直接获取用户在页面中实时敲入的内容（兼容 contenteditable 与 textarea）
-        try {
-          var el = document.querySelector([
-            "[data-input-scroll] [contenteditable='true']",
-            "[data-input-scroll] textarea",
-            "[data-composer-card='true'] [contenteditable='true']",
-            "[data-composer-card='true'] textarea",
-            "[contenteditable='true']",
-            "textarea"
-          ].join(","));
-          if (el) {
-            if (el.isContentEditable || el.getAttribute("contenteditable") === "true") {
-              var t = typeof el.innerText === "string" ? el.innerText : (el.textContent || "");
-              domVal = t.replace(/\r?\n$/g, "");
-            } else if (typeof el.value === "string") {
-              domVal = el.value;
-            }
-          }
-        } catch (eDom) { /* ignore */ }
-
-        // 2) 官方 Lexical 编辑器 projection 剪贴板文本
-        try {
-          if (ishell && ishell.projection && typeof ishell.projection.clipboardText === "string") {
-            projVal = ishell.projection.clipboardText;
-          }
-        } catch (eProj) { /* ignore */ }
-
-        // 3) 官方 state 快照（注意：打字过程中官方并未调用 publish，仅初次 setDraft 时落入）
-        try {
-          if (ishell && ishell.state && typeof ishell.state.getSnapshot === "function") {
-            var snap = ishell.state.getSnapshot();
-            if (snap && typeof snap.draft === "string") snapVal = snap.draft;
-          } else if (ishell && typeof ishell.draft === "string") {
-            snapVal = ishell.draft;
-          }
-        } catch (eSnap) { /* ignore */ }
-
-        var chosen = fallbackText;
-        var source = "fallback";
-
-        if (domVal !== "") {
-          chosen = domVal;
-          source = "dom";
-        } else if (projVal !== "") {
-          chosen = projVal;
-          source = "projection";
-        } else if (snapVal !== "") {
-          chosen = snapVal;
-          source = "snapshot";
-        }
-
-        log("info", "recall", "输入框文本读取诊断", {
-          source: source,
-          chosenLen: typeof chosen === "string" ? chosen.length : 0,
-          domLen: domVal.length,
-          projLen: projVal.length,
-          snapLen: snapVal.length,
-          fallbackLen: typeof fallbackText === "string" ? fallbackText.length : 0
-        });
-
-        return chosen;
-      }
-
       async function doRecallThenSend(p) {
         if (sendingRef.current) return;
         sendingRef.current = true;
@@ -409,7 +340,7 @@ import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "..
         try {
           var sid = props.sessionId;
           // 读取输入框当前文本（用户可能已修改）：重置/重发都使用修改后的内容
-          var sendText = readCurrentComposerText(p.draftText);
+          var sendText = readCurrentComposerText(p.draftText, props);
           // 极限场景判定（v2.4.0 改约）：窗口化快照上的 isFirstUserMessage 会误判（窗口起点=目标消息即误报首条），
           // 首条/截断场景统一交给宿主判定树——/bubble/recall 返回 no-boundary/turn-open 时再走 resetConversation。
           // 本地只保留快照可判时的提前短路（no-boundary）。

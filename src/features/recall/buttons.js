@@ -1,4 +1,6 @@
 
+import { log } from "../../core/log.js";
+
     /** 定位主发送/停止按钮（官方 card 区域内） */
     function findPrimaryButton() {
       try {
@@ -52,10 +54,79 @@
       } catch (e) { /* ignore */ }
     }
 
+    // 稳健读取输入框当前文本：DOM 物理渲染优先 + projection 编辑器层 + state 快照兜底
+    function readCurrentComposerText(fallbackText, props) {
+      var domVal = "";
+      var projVal = "";
+      var snapVal = "";
+      var ishell = (props && props.inputState) || null;
+
+      // 1) DOM 物理读取（最高优先级）：直接获取用户在页面中实时敲入的内容（兼容 contenteditable 与 textarea）
+      try {
+        var el = document.querySelector([
+          "[data-input-scroll] [contenteditable='true']",
+          "[data-input-scroll] textarea",
+          "[data-composer-card='true'] [contenteditable='true']",
+          "[data-composer-card='true'] textarea",
+          "[contenteditable='true']",
+          "textarea"
+        ].join(","));
+        if (el) {
+          if (el.isContentEditable || el.getAttribute("contenteditable") === "true") {
+            var t = typeof el.innerText === "string" ? el.innerText : (el.textContent || "");
+            domVal = t.replace(/\r?\n$/g, "");
+          } else if (typeof el.value === "string") {
+            domVal = el.value;
+          }
+        }
+      } catch (eDom) { /* ignore */ }
+
+      // 2) 官方 Lexical 编辑器 projection 剪贴板文本
+      try {
+        if (ishell && ishell.projection && typeof ishell.projection.clipboardText === "string") {
+          projVal = ishell.projection.clipboardText;
+        }
+      } catch (eProj) { /* ignore */ }
+
+      // 3) 官方 state 快照（注意：打字过程中官方并未调用 publish，仅初次 setDraft 时落入）
+      try {
+        if (ishell && ishell.state && typeof ishell.state.getSnapshot === "function") {
+          var snap = ishell.state.getSnapshot();
+          if (snap && typeof snap.draft === "string") snapVal = snap.draft;
+        } else if (ishell && typeof ishell.draft === "string") {
+          snapVal = ishell.draft;
+        }
+      } catch (eSnap) { /* ignore */ }
+
+      var chosen = fallbackText;
+      var source = "fallback";
+
+      if (domVal !== "") {
+        chosen = domVal;
+        source = "dom";
+      } else if (projVal !== "") {
+        chosen = projVal;
+        source = "projection";
+      } else if (snapVal !== "") {
+        chosen = snapVal;
+        source = "snapshot";
+      }
+
+      log("info", "recall", "输入框文本读取诊断", {
+        source: source,
+        chosenLen: typeof chosen === "string" ? chosen.length : 0,
+        domLen: domVal.length,
+        projLen: projVal.length,
+        snapLen: snapVal.length
+      });
+
+      return chosen;
+    }
 
 export {
   findPrimaryButton,
   isStopButton,
   primaryButtonSendingTimer,
-  setPrimaryButtonSendingState
+  setPrimaryButtonSendingState,
+  readCurrentComposerText
 };

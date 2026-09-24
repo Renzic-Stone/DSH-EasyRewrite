@@ -1,3 +1,5 @@
+import { log } from "../../core/log.js";
+import { serviceRefs, resolveImageCompat } from "../../core/services.js";
 
     // ---------- 调试 API：撤回条实时调参（调试模式 dsh-easyrewrite:debug=1 时挂 window.__dshEasyRewrite.bar） ----------
     // 用法：__dshEasyRewrite.bar.get() 看现状（含计算样式）；.set({inset,size,radius,bg}) 实时调（立即生效，不落盘）；
@@ -58,11 +60,11 @@
       return out;
     }
     // 图片桥接：旧会话 live 时把消息附件取成字节，注册进官方全局 draftAttachments 单例（不进输入框），
-    // 返回新草稿 id 列表——供新会话 resume 时 addImages 使用（撤回键/气泡编辑两条路径共用）。
+    // 返回新草稿 id列表——供新会话 resume 时 addImages 使用（撤回键/气泡编辑两条路径共用）。
     async function bridgeSessionImages(sessionId, refs) {
       var out = [];
       try {
-        if (!refs || !refs.length || !ctxConversationRef || typeof ctxConversationRef.createDraftImages !== "function") return out;
+        if (!refs || !refs.length || !serviceRefs.conversation || typeof serviceRefs.conversation.createDraftImages !== "function") return out;
         var files = [];
         for (var i = 0; i < refs.length; i++) {
           var ref = refs[i];
@@ -78,7 +80,7 @@
           } catch (eOne) { log("warn", "attach", "桥接单个附件失败", { attachmentId: ref.attachmentId, err: String(eOne && eOne.message ? eOne.message : eOne) }); }
         }
         if (files.length > 0) {
-          var imgs = ctxConversationRef.createDraftImages(files);
+          var imgs = serviceRefs.conversation.createDraftImages(files);
           out = imgs.map(function (im) { return im.id; });
           log("info", "attach", "图片桥接完成（进官方单例）", { count: out.length });
         }
@@ -90,5 +92,6 @@ export {
   barTune,
   barApplyCircTune,
   barApplyTune,
-  barDiagnose
+  barDiagnose,
+  bridgeSessionImages
 };

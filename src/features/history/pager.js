@@ -2,6 +2,7 @@ import * as React from "react";
 import { IconChevronLeftOutline, IconChevronRightOutline } from "../../core/icons.js";
 import { useUILocaleDict } from "../../core/i18n.js";
 import { log } from "../../core/log.js";
+import { serviceRefs } from "../../core/services.js";
 import { safeOpenSession } from "../recall/safe-session.js";
 import { familyOfSession } from "../../core/session.js";
 import { getChatSnapshot, hasChatSnapshot } from "../../core/constants.js";
@@ -125,7 +126,7 @@ import { readPending, writePending } from "../recall/store.js";
           }
         }
           log("info", "reset", "场景1工作区定位", { sessionId: sessionId, wsId: wsId, hasConnect: !!(props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") });
-        var wsConnector = (ctxUiWorkspaceRef && typeof ctxUiWorkspaceRef.connectWorkspace === "function") ? ctxUiWorkspaceRef : ((props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") ? props.ctxWorkspaces : null);
+        var wsConnector = (serviceRefs.uiWorkspace && typeof serviceRefs.uiWorkspace.connectWorkspace === "function") ? serviceRefs.uiWorkspace : ((props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") ? props.ctxWorkspaces : null);
         if (wsId && wsConnector) {
           wsConnector.connectWorkspace(wsId).then(function (newId) {
             if (!newId) return;

@@ -62,12 +62,13 @@
   ],
   "license": "MIT",
   "scripts": {
-    "test": "node tests/smoke-host.mjs && node tests/test-log-memory.mjs && node tests/test-issue9-anti-double-submit.mjs && node tests/test-issue11-bubble-compatibility.mjs && node tests/test-dsh-0.1.7-pager.mjs && node tests/test-v3-components-render.mjs",
+    "test": "node tests/check-scope-vars.mjs && node tests/smoke-host.mjs && node tests/test-log-memory.mjs && node tests/test-issue9-anti-double-submit.mjs && node tests/test-issue11-bubble-compatibility.mjs && node tests/test-dsh-0.1.7-pager.mjs && node tests/test-v3-components-render.mjs",
     "build": "node build.mjs",
     "prepare": "node build.mjs",
     "prepack": "node build.mjs"
   },
   "devDependencies": {
+    "acorn": "^8.18.0",
     "esbuild": "^0.25.12"
   },
   "repository": {

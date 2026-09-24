@@ -29,8 +29,14 @@ import {
   rewriteOnClick,
   showOriginalImages,
   draftConflictMode,
-  recallVisualMode
+  recallVisualMode,
+  recallConfirmEnabled,
+  getChatSnapshot,
+  editOffShowRecall
 } from "../../core/constants.js";
+import { setPrimaryButtonSendingState, readCurrentComposerText } from "../recall/buttons.js";
+import { requestCleanGhostQueue } from "../recall/ghost.js";
+import { ConfirmCapsule } from "../recall/capsule.js";
 import { goToVersion, isFirstUserMessage, resetConversation } from "../history/pager.js";
 import { countContentAfter, statOnlyUser } from "../other/helpers.js";
 
