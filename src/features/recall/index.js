@@ -24,6 +24,7 @@ import { barTune, barDiagnose } from "./tune.js";
 import { log } from "../../core/log.js";
 import { invokeOpenSession } from "../../core/session.js";
 import { setCtxUiWorkspaceRef } from "./safe-session.js";
+import { createModelSel } from "../../core/services.js";
 
 export function RecallSettingsPage(props) {
   const L = useUILocaleDict();
@@ -148,6 +149,7 @@ export function RecallSettingsPage(props) {
 
 export function registerRecall(ctx) {
   const disposers = [];
+  const barModelSel = createModelSel(ctx);
 
   try {
     const uiW = ctx.uiWorkspace || ((typeof ctx.get === "function") ? (ctx.get("uiWorkspace") || null) : null);
@@ -203,10 +205,11 @@ export function registerRecall(ctx) {
         order: -10,
         inject: (sessionId) => {
           let inputShell = null;
+          let conversationSvc = null;
           try {
             if (typeof ctx.sessions.scope === "function" && sessionId) {
               const scope = ctx.sessions.scope(sessionId);
-              const conversationSvc = scope ? scope.get("conversation") : null;
+              conversationSvc = scope ? scope.get("conversation") : null;
               if (conversationSvc && conversationSvc.input && typeof conversationSvc.input.for === "function") {
                 inputShell = conversationSvc.input.for(scope);
               }
@@ -217,8 +220,34 @@ export function registerRecall(ctx) {
             openSession: (id) => invokeOpenSession(ctx, id),
             ctxWorkspaces: ctx.workspaces,
             ctxSessions: ctx.sessions,
+            updateQueue: (itemId, action) => {
+              try {
+                if (conversationSvc && typeof conversationSvc.updateQueue === "function") {
+                  return conversationSvc.updateQueue(itemId, action);
+                }
+                const binding = (ctx.sessions && typeof ctx.sessions.binding === "function")
+                  ? ctx.sessions.binding(sessionId)
+                  : null;
+                if (binding && binding.session && typeof binding.session.updateQueue === "function") {
+                  return binding.session.updateQueue(itemId, action);
+                }
+              } catch (eQ) {}
+              return Promise.resolve();
+            },
+            modelSel: barModelSel,
             inputActions: inputShell && inputShell.actions ? inputShell.actions : null,
-            inputState: inputShell || null
+            inputState: inputShell || null,
+            restoreSession: (id) => {
+              return fetch("/bubble/unarchive", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ sessionId: id }),
+                keepalive: true
+              }).then((r) => r.json()).then((d) => {
+                log("debug", "reset", "恢复完成（unarchive）", { sessionId: id, ok: !!(d && d.ok) });
+                return !!(d && d.ok);
+              }).catch(() => false);
+            }
           };
         }
       }, RecallBanner)
@@ -229,7 +258,7 @@ export function registerRecall(ctx) {
     const d2 = ctx.slots.inject("plugins.row.config", () =>
       ctx.slots.register(
         { name: "plugins.row.config", key: "dsh-easyrewrite#recall" },
-        (p) => React.createElement(RecallSettingsPage, p)
+        RecallSettingsPage
       )
     );
     if (typeof d2 === "function") disposers.push(d2);

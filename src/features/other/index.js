@@ -61,7 +61,7 @@ export function registerOther(ctx) {
     const d1 = ctx.slots.inject("plugins.row.config", () =>
       ctx.slots.register(
         { name: "plugins.row.config", key: "dsh-easyrewrite#other" },
-        (p) => React.createElement(OtherSettingsPage, p)
+        OtherSettingsPage
       )
     );
     if (typeof d1 === "function") disposers.push(d1);

@@ -190,7 +190,7 @@ export function registerHistory(ctx) {
     const d2 = ctx.slots.inject("plugins.row.config", () =>
       ctx.slots.register(
         { name: "plugins.row.config", key: "dsh-easyrewrite#history" },
-        (p) => React.createElement(HistorySettingsPage, p)
+        HistorySettingsPage
       )
     );
     if (typeof d2 === "function") disposers.push(d2);

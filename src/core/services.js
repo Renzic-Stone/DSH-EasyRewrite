@@ -61,3 +61,38 @@ export async function resolveImageCompat(sessionId, ref, props) {
   }
   return null;
 }
+
+/** 模型与思考挡位捕获/恢复随行（v2.1.1 起官方通道） */
+export function createModelSel(ctx) {
+  return {
+    capture: function (sessionId) {
+      try {
+        const md = ctx && ctx.modelDirectories ? ctx.modelDirectories : serviceRefs.modelDirectories;
+        if (!md || typeof md.directoryFor !== "function") return null;
+        const cur = md.directoryFor(sessionId).store.getSnapshot().current;
+        if (cur && cur.provider && cur.model) {
+          return { provider: cur.provider, model: cur.model, reasoningEffort: cur.reasoningEffort };
+        }
+      } catch (e) {
+        log("warn", "model", "读取当前模型/挡位失败（将按默认发送）", { err: String(e && e.message ? e.message : e) });
+      }
+      return null;
+    },
+    apply: function (sessionId, sel) {
+      if (!sel || !sel.provider || !sel.model) return Promise.resolve(false);
+      try {
+        const md = ctx && ctx.modelDirectories ? ctx.modelDirectories : serviceRefs.modelDirectories;
+        if (!md || typeof md.directoryFor !== "function") return Promise.resolve(false);
+        return md.directoryFor(sessionId).select(sel).then(function () {
+          log("info", "model", "新会话已应用原模型/挡位选择", { provider: sel.provider, model: sel.model });
+          return true;
+        }, function (e) {
+          log("warn", "model", "应用模型/挡位失败（按默认发送）", { err: String(e && e.message ? e.message : e) });
+          return false;
+        });
+      } catch (e) {
+        return Promise.resolve(false);
+      }
+    }
+  };
+}

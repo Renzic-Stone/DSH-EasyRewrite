@@ -10,6 +10,9 @@ import { editWidthMode, editWidthCustom } from "./width.js";
 import { createSettingsStyles } from "../../core/ui-settings.js";
 import { UserBubbleView } from "./view.js";
 import { injectThemeStyle } from "./theme.js";
+import { createModelSel } from "../../core/services.js";
+import { invokeOpenSession } from "../../core/session.js";
+import { log } from "../../core/log.js";
 
 export function BubbleSettingsPage(props) {
   const L = useUILocaleDict();
@@ -90,11 +93,48 @@ export function BubbleSettingsPage(props) {
 export function registerBubble(ctx) {
   const disposers = [];
   const styleTag = injectThemeStyle();
+  const modelSel = createModelSel(ctx);
 
   // 1. 注册 conversation.chat.node 拦截气泡
   if (ctx && ctx.slots && typeof ctx.slots.inject === "function") {
     const d1 = ctx.slots.inject("conversation.chat.node", () =>
-      ctx.slots.register({ name: "conversation.chat.node", order: 10 }, UserBubbleView)
+      ctx.slots.register({
+        name: "conversation.chat.node",
+        key: "user",
+        priority: -1,
+        inject: (sessionId) => {
+          let inputShell2 = null;
+          try {
+            if (sessionId && ctx.sessions && typeof ctx.sessions.scope === "function") {
+              const scope2 = ctx.sessions.scope(sessionId);
+              const conv2 = scope2 ? scope2.get("conversation") : null;
+              if (conv2 && conv2.input && typeof conv2.input.for === "function") {
+                inputShell2 = conv2.input.for(scope2);
+              }
+            }
+          } catch (eSh2) { inputShell2 = null; }
+          return {
+            openSession: (id) => invokeOpenSession(ctx, id),
+            ctxWorkspaces: ctx.workspaces,
+            ctxSessions: ctx.sessions,
+            modelSel,
+            modelDirectories: ctx.modelDirectories,
+            inputActions: inputShell2 && inputShell2.actions ? inputShell2.actions : null,
+            inputState: inputShell2,
+            restoreSession: (id) => {
+              return fetch("/bubble/unarchive", {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ sessionId: id }),
+                keepalive: true
+              }).then((r) => r.json()).then((d) => {
+                log("debug", "reset", "恢复完成（unarchive）", { sessionId: id, ok: !!(d && d.ok) });
+                return !!(d && d.ok);
+              }).catch(() => false);
+            }
+          };
+        }
+      }, UserBubbleView)
     );
     if (typeof d1 === "function") disposers.push(d1);
 
@@ -102,7 +142,7 @@ export function registerBubble(ctx) {
     const d2 = ctx.slots.inject("plugins.row.config", () =>
       ctx.slots.register(
         { name: "plugins.row.config", key: "dsh-easyrewrite#bubble" },
-        (p) => React.createElement(BubbleSettingsPage, p)
+        BubbleSettingsPage
       )
     );
     if (typeof d2 === "function") disposers.push(d2);
