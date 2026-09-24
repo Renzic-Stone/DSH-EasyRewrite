@@ -181,17 +181,19 @@ console.log('✓ 高频连击防穿透与全量吞噬测试通过');
 console.log('[Test 4] safeOpenSession 多重降级验证...');
 
 function testSafeOpenSession(targetId, props) {
-  try {
-    if (props && typeof props.openSession === 'function') {
-      props.openSession(targetId);
-      return true;
+  if (props && typeof props.openSession === 'function') {
+    try {
+      const res = props.openSession(targetId);
+      if (res !== false) return true;
+    } catch (e1) {
+      // 捕获异常并平滑降级
     }
-    if (props && props.ctxSessions && typeof props.ctxSessions.open === 'function') {
+  }
+  if (props && props.ctxSessions && typeof props.ctxSessions.open === 'function') {
+    try {
       props.ctxSessions.open(targetId);
       return true;
-    }
-  } catch (e) {
-    return false;
+    } catch (e2) {}
   }
   return false;
 }
@@ -208,9 +210,18 @@ const props2 = { ctxSessions: { open: (id) => { openedByFallback = id; } } };
 assert.equal(testSafeOpenSession('sess-2', props2), true);
 assert.equal(openedByFallback, 'sess-2', '降级通道应打开 sess-2');
 
-// 场景 3：props.openSession 抛异常，安全捕获不崩溃
+// 场景 3：props.openSession 抛异常且无降级通道，安全捕获返回 false 不崩溃
 const props3 = { openSession: () => { throw new Error('DSH host disconnected'); } };
 assert.equal(testSafeOpenSession('sess-3', props3), false);
+
+// 场景 4：props.openSession 抛异常但有降级通道（如 0.1.7 场景），应自动走降级通道成功打开
+let fallbackFromBrokenPrimary = null;
+const props4 = {
+  openSession: () => { throw new TypeError('ctx.sessions.open is not a function'); },
+  ctxSessions: { open: (id) => { fallbackFromBrokenPrimary = id; } }
+};
+assert.equal(testSafeOpenSession('sess-4', props4), true);
+assert.equal(fallbackFromBrokenPrimary, 'sess-4', '优先通道崩溃时降级通道应顺利接管打开 sess-4');
 
 console.log('✓ safeOpenSession 降级与异常保护验证通过');
 
