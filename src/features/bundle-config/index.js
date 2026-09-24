@@ -94,205 +94,178 @@ export function BundleConfigPage(props) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: "8px",
-      margin: "12px 0 16px 0",
+      gap: "2px",
+      margin: "4px 0 16px 0",
       width: "100%",
       boxSizing: "border-box"
     },
     "data-dsh-easyrewrite": "bundle-config"
   },
-    // 标题：更新
-    React.createElement("div", {
-      style: {
-        fontSize: "13px",
-        fontWeight: 600,
-        color: "var(--dsw-alias-label-primary)",
-        lineHeight: "20px"
-      }
-    }, L.bundleConfigTitle || L.sectionUpdate || "更新"),
-
-    // 卡片容器：扁平背景
+    // 第一行：当前版本：v3.0.0（已是最新版本）   [检查更新]
     React.createElement("div", {
       style: {
         display: "flex",
-        flexDirection: "column",
-        background: "var(--dsw-alias-bg-layer-2, rgba(128,128,128,0.06))",
-        border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.18))",
-        borderRadius: "10px",
-        padding: "0 14px",
-        boxSizing: "border-box"
+        alignItems: "center",
+        justifyContent: "space-between",
+        minHeight: "36px",
+        gap: "12px"
       }
     },
-      // 第一行：当前版本 + 灰色小字 + 右侧检查更新按钮
       React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          minHeight: "44px",
-          padding: "8px 0",
-          borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.12))",
-          gap: "12px"
-        }
-      },
-        React.createElement("div", {
-          style: { display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap", minWidth: 0 }
-        },
-          React.createElement("span", {
-            style: {
-              fontSize: "13px",
-              color: "var(--dsw-alias-label-primary)",
-              fontWeight: 500,
-              whiteSpace: "nowrap"
-            }
-          }, (L.currentVersion || "当前版本") + "：v" + updateVer),
-          statusText ? React.createElement("span", {
-            style: {
-              fontSize: "12px",
-              color: updateAvailableVer ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-label-secondary)",
-              fontWeight: "normal"
-            }
-          }, "（" + statusText + "）") : null
-        ),
-        updateAvailableVer ? React.createElement("button", {
-          type: "button",
-          style: {
-            appearance: "none",
-            border: "none",
-            background: "var(--dsw-static-deepseek-500, #4d6bfe)",
-            color: "#ffffff",
-            borderRadius: "6px",
-            padding: "4px 12px",
-            fontSize: "12px",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            whiteSpace: "nowrap",
-            flex: "none"
-          },
-          onClick: () => { doUpdatePlugin(); }
-        }, updateUpdating ? (L.updating || "正在更新…") : (L.updateNow || "立即更新")) : React.createElement("button", {
-          type: "button",
-          disabled: updateChecking,
-          style: {
-            appearance: "none",
-            border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
-            background: "transparent",
-            color: "var(--dsw-alias-label-secondary)",
-            borderRadius: "6px",
-            padding: "4px 12px",
-            fontSize: "12px",
-            cursor: updateChecking ? "not-allowed" : "pointer",
-            opacity: updateChecking ? 0.6 : 1,
-            fontFamily: "inherit",
-            whiteSpace: "nowrap",
-            flex: "none"
-          },
-          onClick: () => { doCheckUpdate(); }
-        }, updateChecking ? (L.checking || "正在检查…") : (L.checkUpdate || "检查更新"))
-      ),
-
-      // 第二行：每日检查更新（发现新版本时提示） + Switch 开关
-      React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          minHeight: "44px",
-          padding: "8px 0",
-          gap: "12px"
-        }
+        style: { display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap", minWidth: 0 }
       },
         React.createElement("span", {
           style: {
             fontSize: "13px",
             color: "var(--dsw-alias-label-primary)",
-            lineHeight: "18px"
+            lineHeight: "20px"
           }
-        }, L.autoCheckUpdate || "每日检查更新（发现新版本时提示）"),
-        React.createElement("div", {
-          role: "checkbox",
-          "aria-checked": !!autoCheckOn,
+        }, (L.currentVersion || "当前版本") + "：v" + updateVer),
+        statusText ? React.createElement("span", {
           style: {
-            width: 20,
-            height: 20,
-            borderRadius: "50%",
-            border: "2px solid " + (autoCheckOn ? "#ffffff" : "var(--dsw-alias-border-l2, rgba(128,128,128,0.45))"),
-            background: autoCheckOn ? "#ffffff" : "transparent",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: autoCheckOn ? "#000000" : "transparent",
-            fontSize: "13px",
-            lineHeight: "13px",
-            cursor: "pointer",
-            flex: "none",
-            boxSizing: "border-box",
-            transition: "border-color .15s, background .15s, color .15s",
-            userSelect: "none"
-          },
-          onClick: (e) => {
-            e.stopPropagation();
-            const next = !autoCheckOn;
-            setAutoCheckOn(next);
-            setBool("dsh-easyrewrite:autoCheckUpdate", next);
+            fontSize: "12px",
+            color: updateAvailableVer ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-label-secondary)",
+            lineHeight: "20px"
           }
-        }, autoCheckOn ? React.createElement(IconCheckOutline, null) : null)
+        }, "（" + statusText + "）") : null
       ),
+      updateAvailableVer ? React.createElement("button", {
+        type: "button",
+        style: {
+          appearance: "none",
+          border: "none",
+          background: "var(--dsw-static-deepseek-500, #4d6bfe)",
+          color: "#ffffff",
+          borderRadius: "6px",
+          padding: "3px 10px",
+          fontSize: "12px",
+          cursor: "pointer",
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
+          flex: "none"
+        },
+        onClick: () => { doUpdatePlugin(); }
+      }, updateUpdating ? (L.updating || "正在更新…") : (L.updateNow || "立即更新")) : React.createElement("button", {
+        type: "button",
+        disabled: updateChecking,
+        style: {
+          appearance: "none",
+          border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+          background: "transparent",
+          color: "var(--dsw-alias-label-secondary)",
+          borderRadius: "6px",
+          padding: "3px 10px",
+          fontSize: "12px",
+          cursor: updateChecking ? "not-allowed" : "pointer",
+          opacity: updateChecking ? 0.6 : 1,
+          fontFamily: "inherit",
+          whiteSpace: "nowrap",
+          flex: "none"
+        },
+        onClick: () => { doCheckUpdate(); }
+      }, updateChecking ? (L.checking || "正在检查…") : (L.checkUpdate || "检查更新"))
+    ),
 
-      // DSH 兼容性告警提示（如果当前环境低于最低兼容版本）
-      (() => {
-        if (!dshVer) return null;
-        if (cmpDsh(dshVer, MIN_DSH_VERSION) < 0) {
-          return React.createElement("div", {
-            key: "dsh-low",
-            style: {
-              display: "flex",
-              flexDirection: "column",
-              gap: "4px",
-              padding: "8px",
-              margin: "6px 0 10px 0",
-              background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.1))",
-              borderRadius: "8px"
-            }
-          },
-            React.createElement("span", { style: { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)" } },
-              (L.dshLowWarning || "DeepSeek Harness 版本较低").replace("{cur}", dshVer).replace("{min}", MIN_DSH_VERSION)
-            ),
-            React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
-              React.createElement("code", {
-                style: {
-                  fontSize: "11px",
-                  color: "var(--dsw-alias-label-secondary)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  flex: "1"
-                }
-              }, "npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION),
-              React.createElement("button", {
-                type: "button",
-                style: {
-                  appearance: "none",
-                  border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
-                  background: "transparent",
-                  color: "var(--dsw-alias-label-secondary)",
-                  borderRadius: "6px",
-                  padding: "2px 8px",
-                  fontSize: "11px",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  flex: "none"
-                },
-                onClick: () => {
-                  try { legacyCopy("npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION); } catch (e) {}
-                }
-              }, L.copyUpgradeCmd || "复制升级命令")
-            )
-          );
+    // 第二行：每日检查更新（发现新版本时提示）   (switch)
+    React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        minHeight: "36px",
+        gap: "12px"
+      }
+    },
+      React.createElement("span", {
+        style: {
+          fontSize: "13px",
+          color: "var(--dsw-alias-label-primary)",
+          lineHeight: "20px"
         }
-        return null;
-      })()
-    )
+      }, L.autoCheckUpdate || "每日检查更新（发现新版本时提示）"),
+      React.createElement("div", {
+        role: "checkbox",
+        "aria-checked": !!autoCheckOn,
+        style: {
+          width: 20,
+          height: 20,
+          borderRadius: "50%",
+          border: "2px solid " + (autoCheckOn ? "#ffffff" : "var(--dsw-alias-border-l2, rgba(128,128,128,0.45))"),
+          background: autoCheckOn ? "#ffffff" : "transparent",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: autoCheckOn ? "#000000" : "transparent",
+          fontSize: "13px",
+          lineHeight: "13px",
+          cursor: "pointer",
+          flex: "none",
+          boxSizing: "border-box",
+          transition: "border-color .15s, background .15s, color .15s",
+          userSelect: "none"
+        },
+        onClick: (e) => {
+          e.stopPropagation();
+          const next = !autoCheckOn;
+          setAutoCheckOn(next);
+          setBool("dsh-easyrewrite:autoCheckUpdate", next);
+        }
+      }, autoCheckOn ? React.createElement(IconCheckOutline, null) : null)
+    ),
+
+    // DSH 兼容性低版本告警提示（仅当不兼容时兜底）
+    (() => {
+      if (!dshVer) return null;
+      if (cmpDsh(dshVer, MIN_DSH_VERSION) < 0) {
+        return React.createElement("div", {
+          key: "dsh-low",
+          style: {
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            padding: "8px",
+            margin: "6px 0",
+            background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.1))",
+            borderRadius: "8px"
+          }
+        },
+          React.createElement("span", { style: { fontSize: "12px", lineHeight: "18px", color: "var(--dsw-alias-label-primary)" } },
+            (L.dshLowWarning || "DeepSeek Harness 版本较低").replace("{cur}", dshVer).replace("{min}", MIN_DSH_VERSION)
+          ),
+          React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px" } },
+            React.createElement("code", {
+              style: {
+                fontSize: "11px",
+                color: "var(--dsw-alias-label-secondary)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                flex: "1"
+              }
+            }, "npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION),
+            React.createElement("button", {
+              type: "button",
+              style: {
+                appearance: "none",
+                border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+                background: "transparent",
+                color: "var(--dsw-alias-label-secondary)",
+                borderRadius: "6px",
+                padding: "2px 8px",
+                fontSize: "11px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                flex: "none"
+              },
+              onClick: () => {
+                try { legacyCopy("npm install -g @deepseek-ai/dsh@" + MIN_DSH_VERSION); } catch (e) {}
+              }
+            }, L.copyUpgradeCmd || "复制升级命令")
+          )
+        );
+      }
+      return null;
+    })()
   );
 }
 
