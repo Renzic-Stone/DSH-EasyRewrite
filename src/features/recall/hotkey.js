@@ -1,8 +1,10 @@
 
-    // ---------- 撤回快捷键（默认 Ctrl+Z；可录制；输入框未聚焦且最近一条为用户消息时生效） ----------
-    var HOTKEY_KEY = "dsh-easyrewrite:hotkey";
-    var HOTKEY_ENABLED_KEY = "dsh-easyrewrite:hotkeyEnabled";
-    let hotkeyCaptureActive = false;
+import { getBool, setBool } from "../../core/constants.js";
+
+// ---------- 撤回快捷键（默认 Ctrl+Z；可录制；输入框未聚焦且最近一条为用户消息时生效） ----------
+var HOTKEY_KEY = "dsh-easyrewrite:hotkey";
+var HOTKEY_ENABLED_KEY = "dsh-easyrewrite:hotkeyEnabled";
+let hotkeyCaptureActive = false;
 export function setHotkeyCaptureActive(v) { hotkeyCaptureActive = v; } // 录制期间屏蔽全局触发
     /** 总开关（默认关——与其他插件快捷键不打架；Beta 功能）。 */
     function hotkeyEnabledSetting() {

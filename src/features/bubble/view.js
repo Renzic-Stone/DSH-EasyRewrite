@@ -13,7 +13,7 @@ import {
   formatClock,
   CopyButton
 } from "../../core/ui.js";
-import { readPending, writePending } from "../recall/store.js";
+import { usePending, readPending, writePending } from "../recall/store.js";
 import { safeOpenSession } from "../recall/safe-session.js";
 import { PendingOriginalImage } from "../recall/image.js";
 import { EditModelPicker } from "./model-picker.js";
