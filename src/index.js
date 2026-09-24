@@ -1,0 +1,91 @@
+import * as React from "react";
+import { setServiceRefs } from "./core/services.js";
+import { setLocaleService } from "./core/i18n.js";
+import { log } from "./core/log.js";
+import { NS } from "./core/constants.js";
+import { invokeOpenSession } from "./core/session.js";
+import { BundleConfigPage, initAutoUpdateCheck } from "./features/bundle-config/index.js";
+import { registerBubble } from "./features/bubble/index.js";
+import { registerRecall } from "./features/recall/index.js";
+import { registerHistory } from "./features/history/index.js";
+import { registerOther } from "./features/other/index.js";
+import { EasyRewriteSettingsCard } from "./features/settings-card/index.js";
+
+function apply(ctx) {
+  ctx.effect(() => {
+    const disposers = [];
+
+    // 初始化全局上下文与服务弱引用
+    setServiceRefs(ctx);
+    if (ctx && ctx.locale) setLocaleService(ctx.locale);
+    try {
+      if (typeof ctx.locale === "object" && ctx.locale !== null && typeof ctx.locale.register === "function") {
+        ctx.locale.register(NS, {});
+      }
+    } catch (e) {}
+
+    log("info", "lifecycle", "client half active (v3.0.0 modular architecture)");
+
+    // 每日自动检测更新静默触发
+    initAutoUpdateCheck();
+
+    // 1. 注册顶级包配置（plugins.bundle.config）
+    if (ctx && ctx.slots && typeof ctx.slots.inject === "function") {
+      const dBnd = ctx.slots.inject("plugins.bundle.config", () =>
+        ctx.slots.register(
+          { name: "plugins.bundle.config", key: "dsh-easyrewrite" },
+          (p) => React.createElement(BundleConfigPage, p)
+        )
+      );
+      if (typeof dBnd === "function") disposers.push(dBnd);
+    }
+
+    // 2. 按功能注册四大 Row 组件（各自包含独立的 Slot 注入与卸载 Disposer）
+    const dBubble = registerBubble(ctx);
+    if (typeof dBubble === "function") disposers.push(dBubble);
+
+    const dRecall = registerRecall(ctx);
+    if (typeof dRecall === "function") disposers.push(dRecall);
+
+    const dHistory = registerHistory(ctx);
+    if (typeof dHistory === "function") disposers.push(dHistory);
+
+    const dOther = registerOther(ctx);
+    if (typeof dOther === "function") disposers.push(dOther);
+
+    // 3. 兼容注册老版本 settings.plugin.item 与单 row 时的 plugins.row.config 综合卡片
+    if (ctx && ctx.slots && typeof ctx.slots.inject === "function") {
+      function registerCard(slotName, kind, embedded) {
+        return ctx.slots.inject(slotName, () =>
+          ctx.slots.register(Object.assign({
+            name: slotName,
+            inject: () => ({
+              openSession: (id) => invokeOpenSession(ctx, id),
+              ctxWorkspaces: ctx.workspaces,
+              ctxSessions: ctx.sessions
+            })
+          }, kind), EasyRewriteSettingsCard)
+        );
+      }
+      const dCard1 = registerCard("settings.plugin.item", { key: "dsh-easyrewrite" });
+      if (typeof dCard1 === "function") disposers.push(dCard1);
+      const dCard2 = registerCard("plugins.row.config", { key: "dsh-easyrewrite#dsh-easyrewrite" }, true);
+      if (typeof dCard2 === "function") disposers.push(dCard2);
+    }
+
+    return () => {
+      for (let i = 0; i < disposers.length; i++) {
+        try {
+          if (typeof disposers[i] === "function") disposers[i]();
+        } catch (e) {}
+      }
+      log("info", "lifecycle", "client half unloaded");
+    };
+  }, "dsh-easyrewrite: modular client bundle");
+}
+
+export default {
+  name: "dsh-easyrewrite",
+  inject: ["slots", "sessions", "workspaces", "conversation", "locale", "modelDirectories"],
+  apply
+};
