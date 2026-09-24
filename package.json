@@ -11,7 +11,12 @@
     "./history": "./lib/row.js",
     "./other": "./lib/row.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*": "./locales/bundle/*",
+    "./bubble/locale/*": "./locales/bubble/*",
+    "./recall/locale/*": "./locales/recall/*",
+    "./history/locale/*": "./locales/history/*",
+    "./other/locale/*": "./locales/other/*"
   },
   "dsh": {
     "bundle": {
@@ -28,6 +33,7 @@
   },
   "files": [
     "lib",
+    "locales",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
