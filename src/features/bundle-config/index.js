@@ -123,9 +123,14 @@ export function BundleConfigPage(props) {
         }, (L.currentVersion || "当前版本") + "：v" + updateVer),
         statusText ? React.createElement("span", {
           style: {
-            fontSize: "12px",
+            display: "inline-block",
+            fontSize: "13px",
+            transform: "scale(0.6)",
+            transformOrigin: "left center",
             color: updateAvailableVer ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-label-secondary)",
-            lineHeight: "20px"
+            lineHeight: "20px",
+            opacity: 0.85,
+            whiteSpace: "nowrap"
           }
         }, "（" + statusText + "）") : null
       ),
