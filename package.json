@@ -2,6 +2,7 @@
   "name": "dsh-easyrewrite",
   "version": "3.0.0",
   "description": "The most seamless message recall & re-edit plugin for DSH Web — native experience, strong compatibility, simple toggles, rich settings, modern lightweight UI.",
+  "icon": "./assets/icon.png",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -34,6 +35,7 @@
   "files": [
     "lib",
     "locales",
+    "assets",
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
