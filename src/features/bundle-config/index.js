@@ -112,7 +112,7 @@ export function BundleConfigPage(props) {
       }
     },
       React.createElement("div", {
-        style: { display: "flex", alignItems: "baseline", gap: "6px", flexWrap: "wrap", minWidth: 0 }
+        style: { display: "flex", alignItems: "center", gap: "4px", flexWrap: "wrap", minWidth: 0 }
       },
         React.createElement("span", {
           style: {
@@ -125,7 +125,7 @@ export function BundleConfigPage(props) {
           style: {
             display: "inline-block",
             fontSize: "13px",
-            transform: "scale(0.6)",
+            transform: "scale(0.8)",
             transformOrigin: "left center",
             color: updateAvailableVer ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-label-secondary)",
             lineHeight: "20px",
