@@ -65,6 +65,11 @@ function apply(ctx) {
               object-fit: contain;
             }
 
+            /* 隐藏顶级 bundle 在子组件列表中的冗余行（仅保留 4 个功能模块） */
+            [data-plugin-row="dsh-easyrewrite"] {
+              display: none !important;
+            }
+
             /* 组件列表行：隐藏全小写短 ID，美化模块路径为规范品牌大写格式 */
             [data-plugin-row="bubble"] code:nth-of-type(1) { display: none !important; }
             [data-plugin-row="bubble"] code:nth-of-type(2) { font-size: 0 !important; }
@@ -155,6 +160,10 @@ function apply(ctx) {
                     prev = prev.previousElementSibling;
                   }
                 }
+              }
+              const rootRows = document.querySelectorAll('[data-plugin-row="dsh-easyrewrite"]');
+              for (let j = 0; j < rootRows.length; j++) {
+                rootRows[j].style.display = "none";
               }
             } catch (err) {}
           };
