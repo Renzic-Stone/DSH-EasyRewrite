@@ -65,36 +65,40 @@ function apply(ctx) {
               object-fit: contain;
             }
 
-            /* 隐藏顶级 bundle 在子组件列表中的冗余行（仅保留 4 个功能模块） */
-            [data-plugin-row="dsh-easyrewrite"] {
+            /* 隐藏顶级 bundle 在子组件列表中的冗余行（支持任意 entryId 前缀，如 profile:web:dsh-easyrewrite 等） */
+            [data-plugin-row="dsh-easyrewrite"],
+            [data-plugin-row$=":dsh-easyrewrite"],
+            [data-plugin-row$="/dsh-easyrewrite"],
+            [data-plugin-row$="#dsh-easyrewrite"],
+            [data-plugin-row*="dsh-easyrewrite"]:not([data-plugin-row*="bubble"]):not([data-plugin-row*="recall"]):not([data-plugin-row*="history"]):not([data-plugin-row*="other"]) {
               display: none !important;
             }
 
-            /* 组件列表行：隐藏全小写短 ID，美化模块路径为规范品牌大写格式 */
-            [data-plugin-row="bubble"] code:nth-of-type(1) { display: none !important; }
-            [data-plugin-row="bubble"] code:nth-of-type(2) { font-size: 0 !important; }
-            [data-plugin-row="bubble"] code:nth-of-type(2)::after {
+            /* 组件列表行：隐藏全小写短 ID，美化模块路径为规范品牌大写格式（支持前缀） */
+            [data-plugin-row*="bubble"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row*="bubble"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row*="bubble"] code:nth-of-type(2)::after {
               content: "DSH-EasyRewrite/Bubble";
               font-size: 11.5px;
             }
 
-            [data-plugin-row="recall"] code:nth-of-type(1) { display: none !important; }
-            [data-plugin-row="recall"] code:nth-of-type(2) { font-size: 0 !important; }
-            [data-plugin-row="recall"] code:nth-of-type(2)::after {
+            [data-plugin-row*="recall"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row*="recall"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row*="recall"] code:nth-of-type(2)::after {
               content: "DSH-EasyRewrite/Recall";
               font-size: 11.5px;
             }
 
-            [data-plugin-row="history"] code:nth-of-type(1) { display: none !important; }
-            [data-plugin-row="history"] code:nth-of-type(2) { font-size: 0 !important; }
-            [data-plugin-row="history"] code:nth-of-type(2)::after {
+            [data-plugin-row*="history"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row*="history"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row*="history"] code:nth-of-type(2)::after {
               content: "DSH-EasyRewrite/History";
               font-size: 11.5px;
             }
 
-            [data-plugin-row="other"] code:nth-of-type(1) { display: none !important; }
-            [data-plugin-row="other"] code:nth-of-type(2) { font-size: 0 !important; }
-            [data-plugin-row="other"] code:nth-of-type(2)::after {
+            [data-plugin-row*="other"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row*="other"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row*="other"] code:nth-of-type(2)::after {
               content: "DSH-EasyRewrite/Other";
               font-size: 11.5px;
             }
@@ -134,7 +138,7 @@ function apply(ctx) {
           });
         }
 
-        // JS 运行时 DOM 增强：秒级捕获并保证文本替换与短 ID 隐藏
+        // JS 运行时 DOM 增强：秒级捕获并保证文本替换与短 ID 隐藏，彻底消除根条目
         if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
           const TARGETS = {
             "dsh-easyrewrite/bubble": "DSH-EasyRewrite/Bubble",
@@ -142,8 +146,9 @@ function apply(ctx) {
             "dsh-easyrewrite/history": "DSH-EasyRewrite/History",
             "dsh-easyrewrite/other": "DSH-EasyRewrite/Other"
           };
-          const cleanCodes = () => {
+          const cleanCodesAndRows = () => {
             try {
+              // 1. 规范化代码标签
               const codeEls = document.querySelectorAll("code");
               for (let i = 0; i < codeEls.length; i++) {
                 const el = codeEls[i];
@@ -161,14 +166,48 @@ function apply(ctx) {
                   }
                 }
               }
-              const rootRows = document.querySelectorAll('[data-plugin-row="dsh-easyrewrite"]');
-              for (let j = 0; j < rootRows.length; j++) {
-                rootRows[j].style.display = "none";
+
+              // 2. 彻底隐藏插件组件列表中的同名根条目（通过 data-plugin-row）
+              const rows = document.querySelectorAll("li[data-plugin-row]");
+              for (let j = 0; j < rows.length; j++) {
+                const li = rows[j];
+                const attr = (li.getAttribute("data-plugin-row") || "").toLowerCase();
+                const isSub = attr.includes("bubble") || attr.includes("recall") || attr.includes("history") || attr.includes("other");
+                if (attr.includes("dsh-easyrewrite") && !isSub) {
+                  li.style.setProperty("display", "none", "important");
+                }
+              }
+
+              // 3. 增强安全防护：如果在 DSH 插件详情页中，检查 section[data-plugin-rows] 内的 li
+              const section = document.querySelector('section[data-plugin-rows]');
+              if (section) {
+                const allLis = section.querySelectorAll("li");
+                for (let k = 0; k < allLis.length; k++) {
+                  const li = allLis[k];
+                  const text = li.textContent || "";
+                  const hasSub = text.includes("Bubble") || text.includes("bubble") ||
+                                 text.includes("Recall") || text.includes("recall") ||
+                                 text.includes("History") || text.includes("history") ||
+                                 text.includes("Other") || text.includes("other");
+                  if (text.includes("dsh-easyrewrite") && !hasSub) {
+                    li.style.setProperty("display", "none", "important");
+                  }
+                }
+
+                // 统计数字微调（5 项修正为 4 项）
+                const countEl = section.querySelector('[class*="sectionCount"]');
+                if (countEl && countEl.textContent && countEl.textContent.includes("5")) {
+                  countEl.textContent = countEl.textContent
+                    .replace(/5\s*项/, "4 项")
+                    .replace(/5\s*运行中/, "4 运行中")
+                    .replace(/5\s*total/i, "4 total")
+                    .replace(/5\s*running/i, "4 running");
+                }
               }
             } catch (err) {}
           };
-          cleanCodes();
-          const obs = new MutationObserver(() => cleanCodes());
+          cleanCodesAndRows();
+          const obs = new MutationObserver(() => cleanCodesAndRows());
           if (document.body) {
             obs.observe(document.body, { childList: true, subtree: true });
             disposers.push(() => {
@@ -213,10 +252,10 @@ function apply(ctx) {
       if (typeof dOther === "function") disposers.push(dOther);
     });
 
-    // 3. 兼容注册老版本 settings.plugin.item 与单 row 时的 plugins.row.config 综合卡片
+    // 3. 兼容注册老版本 settings.plugin.item（左侧旧设置面板条目，不再注册 plugins.row.config 根卡片）
     safeRun("compat-cards", () => {
       if (ctx && ctx.slots && typeof ctx.slots.inject === "function") {
-        function registerCard(slotName, kind, embedded) {
+        function registerCard(slotName, kind) {
           return ctx.slots.inject(slotName, () =>
             ctx.slots.register(Object.assign({
               name: slotName,
@@ -230,8 +269,6 @@ function apply(ctx) {
         }
         const dCard1 = registerCard("settings.plugin.item", { key: "dsh-easyrewrite" });
         if (typeof dCard1 === "function") disposers.push(dCard1);
-        const dCard2 = registerCard("plugins.row.config", { key: "dsh-easyrewrite#dsh-easyrewrite" }, true);
-        if (typeof dCard2 === "function") disposers.push(dCard2);
       }
     });
 
