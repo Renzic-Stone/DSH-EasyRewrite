@@ -10,6 +10,12 @@ import { resetConversation } from "../history/pager.js";
 import { requestCleanGhostQueue } from "./ghost.js";
 import { findPrimaryButton, isStopButton, setPrimaryButtonSendingState, readCurrentComposerText } from "./buttons.js";
 import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "../bubble/attachments.js";
+import {
+  addInputImagesCompat,
+  removeInputImageCompat,
+  pruneInputImagesCompat,
+  getInputImageIdsCompat
+} from "../../core/services.js";
 
     function RecallBanner(props) {
       var sessionId = props.sessionId;
@@ -93,19 +99,17 @@ import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "..
           var keepArr = Array.isArray(pending.preUserImageIds) ? pending.preUserImageIds : [];
           var curX = [];
           try {
-            // v2.4.0 rc.1：inputState 即 shell 实例（imageIds 为公开字段）——禁止经 props.useInput 调 hook（React #321）
-            var sX = props.inputState || null;
-            if (sX && Array.isArray(sX.imageIds)) curX = sX.imageIds.slice();
+            curX = getInputImageIdsCompat(props.inputState);
           } catch (eRead) { log("warn", "recall", "× 读取输入框图片清单失败", { err: String(eRead && eRead.message ? eRead.message : eRead) }); }
           var removedAny = false;
-          if (ia && typeof ia.removeImage === "function") {
-            for (var ci = 0; ci < curX.length; ci++) {
-              if (keepArr.indexOf(curX[ci]) !== -1) continue;
-              try { ia.removeImage(curX[ci]); removedAny = true; } catch (e3) { log("warn", "recall", "× removeImage 单项失败", { id: curX[ci], err: String(e3 && e3.message ? e3.message : e3) }); }
-            }
+          for (var ci = 0; ci < curX.length; ci++) {
+            if (keepArr.indexOf(curX[ci]) !== -1) continue;
+            try {
+              if (removeInputImageCompat(ia, curX[ci])) removedAny = true;
+            } catch (e3) { log("warn", "recall", "× removeImage 单项失败", { id: curX[ci], err: String(e3 && e3.message ? e3.message : e3) }); }
           }
-          if (curX.length > 0 && ia && typeof ia.pruneImages === "function") {
-            try { ia.pruneImages(keepArr); } catch (e4) { log("warn", "recall", "× pruneImages 失败", { err: String(e4 && e4.message ? e4.message : e4) }); }
+          if (curX.length > 0) {
+            try { pruneInputImagesCompat(ia, keepArr); } catch (e4) { log("warn", "recall", "× pruneImages 失败", { err: String(e4 && e4.message ? e4.message : e4) }); }
           }
           log("info", "recall", "× 清理完成", { before: curX.length, keep: keepArr.length, removedAny: removedAny });
           clearPendingAttachIds();
@@ -520,8 +524,8 @@ import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "..
             // 图片桥接（review #3 简化版）：官方 draftAttachments 全局单例跨会话存活——
             // resume 直接 addImages(发送瞬间的 imageIds) 后 submit；消息内容完全由我们构造，无需校验。
             var savedIds = Array.isArray(r.imageIds) ? r.imageIds : [];
-            if (savedIds.length > 0 && typeof ia.addImages === "function") {
-              try { ia.addImages(savedIds); } catch (e) { log("warn", "attach", "addImages 异常（忽略，文字照发）", { err: String(e && e.message ? e.message : e) }); }
+            if (savedIds.length > 0) {
+              try { addInputImagesCompat(ia, savedIds); } catch (e) { log("warn", "attach", "addImages 异常（忽略，文字照发）", { err: String(e && e.message ? e.message : e) }); }
             }
             // Issue #10 深度防御：清空宿主 fork 继承而来的悬空 next-turn 幽灵队列
             // DSH 的 sessions.fork 机制会贪婪复制 turn/end 到 turn/start 之间的非回合事件，
@@ -594,8 +598,8 @@ import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "..
                             ia.setDraft(stg.text);
                           }
                           var stgImgs = Array.isArray(stg.imageIds) ? stg.imageIds : [];
-                          if (stgImgs.length > 0 && typeof ia.addImages === "function") {
-                            ia.addImages(stgImgs);
+                          if (stgImgs.length > 0) {
+                            addInputImagesCompat(ia, stgImgs);
                           }
                           log("info", "recall", "resume 第二阶段：底部暂存草稿及图片已回填", {
                             hasText: !!(stg.text && stg.text.length > 0),

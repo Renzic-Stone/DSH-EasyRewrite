@@ -2,7 +2,7 @@ import * as React from "react";
 import { IconCheckOutline, IconChevronLeftOutline, IconChevronRightOutline, ICONS } from "../../core/icons.js";
 import { useUILocaleDict } from "../../core/i18n.js";
 import { log } from "../../core/log.js";
-import { serviceRefs, resolveImageCompat } from "../../core/services.js";
+import { serviceRefs, resolveImageCompat, createDraftImagesCompat, addInputImagesCompat, getInputImageIdsCompat } from "../../core/services.js";
 import {
   extractText,
   contentParts,
@@ -70,9 +70,17 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : (props.inputState || null);
       if (inputState) draftRef.current = typeof inputState.draft === "string" ? inputState.draft : "";
         // 镜像输入框当前图片 id（供撤回/编辑发送时精确搬运）
-        try { if (Array.isArray(inputState.imageIds)) setLatestInputImageIds(inputState.imageIds.slice()); } catch (eMir) { /* ignore */ }
-        // v2.4.0：rc.1 input门面（props.inputState）的 imageIds 同步
-        try { if (props.inputState && Array.isArray(props.inputState.imageIds)) setLatestInputImageIds(props.inputState.imageIds.slice()); } catch (eMir2) { /* ignore */ }
+        try {
+          var inImgs = getInputImageIdsCompat(inputState);
+          if (inImgs.length > 0) setLatestInputImageIds(inImgs);
+        } catch (eMir) { /* ignore */ }
+        // v2.4.0：rc.1 input门面的 imageIds/attachmentIds 同步
+        try {
+          if (props.inputState) {
+            var pInImgs = getInputImageIdsCompat(props.inputState);
+            if (pInImgs.length > 0) setLatestInputImageIds(pInImgs);
+          }
+        } catch (eMir2) { /* ignore */ }
 
       // 灰字气泡的原文预览展开态（simple/info 模式点击切换）
       var previewState = React.useState(false);
@@ -151,13 +159,12 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
             for (var ri = 0; ri < refs.length; ri++) {
               try {
-                if (!serviceRefs.conversation || typeof serviceRefs.conversation.createDraftImages !== "function") break;
                 var rUrl = await resolveImageCompat(sessionId, refs[ri], null);
                 if (!rUrl) continue;
                 var rResp = await fetch(rUrl);
                 if (!rResp.ok) continue;
                 var rBlob = await rResp.blob();
-                var rD = serviceRefs.conversation.createDraftImages([new File([rBlob], refs[ri].name || "image.png", { type: refs[ri].mediaType || rBlob.type || "image/png" })]);
+                var rD = createDraftImagesCompat([new File([rBlob], refs[ri].name || "image.png", { type: refs[ri].mediaType || rBlob.type || "image/png" })], sessionId);
                 if (rD && rD.length > 0) items.push({ id: rD[0].id, url: rD[0].previewUrl, dataUrl: null });
               } catch (eRo) { log("warn", "edit", "恢复原图失败", { err: String(eRo && eRo.message ? eRo.message : eRo) }); }
             }
@@ -167,8 +174,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
               var sv = savedList[si];
               if (!sv || !sv.dataUrl) continue;
               try {
-                if (!serviceRefs.conversation || typeof serviceRefs.conversation.createDraftImages !== "function") break;
-                var sD = serviceRefs.conversation.createDraftImages([dataUrlToFile(sv.dataUrl)]);
+                var sD = createDraftImagesCompat([dataUrlToFile(sv.dataUrl)], sessionId);
                 if (sD && sD.length > 0) items.push({ id: sD[0].id, url: sD[0].previewUrl, dataUrl: sv.dataUrl });
               } catch (eRa) { log("warn", "edit", "恢复拖入图失败", { err: String(eRa && eRa.message ? eRa.message : eRa) }); }
             }
@@ -406,16 +412,14 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                 if (df.type && df.type.indexOf("image") === 0) imgFiles.push(df);
               }
             }
-            if (imgFiles.length === 0 || !serviceRefs.conversation || typeof serviceRefs.conversation.createDraftImages !== "function") return;
+            if (imgFiles.length === 0) return;
 
             if (isBottom) {
               // 分流 A：释放到底部输入框暂存区
-              var bImgs = serviceRefs.conversation.createDraftImages(imgFiles);
+              var bImgs = createDraftImagesCompat(imgFiles, sessionId);
               if (bImgs && bImgs.length > 0) {
                 var bIds = bImgs.map(function (im) { return im.id; });
-                if (props.inputActions && typeof props.inputActions.addImages === "function") {
-                  props.inputActions.addImages(bIds);
-                }
+                addInputImagesCompat(props.inputActions, bIds);
                 stagedBottomImageIdsRef.current = stagedBottomImageIdsRef.current.concat(bIds);
                 log("info", "edit", "图片已添加到底部输入框暂存区", { count: bIds.length, ids: bIds });
               }
@@ -425,7 +429,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             if (!isBubble) return;
 
             // 分流 B：释放到气泡编辑区（修改当前消息）
-            var dImgs = serviceRefs.conversation.createDraftImages(imgFiles);
+            var dImgs = createDraftImagesCompat(imgFiles, sessionId);
             var addedItems = dImgs.map(function (im) { return { id: im.id, url: im.previewUrl, dataUrl: null }; });
             // 异步补 dataUrl 字节快照（bug② 刷新后可重建）
             for (var ai = 0; ai < addedItems.length; ai++) {
@@ -649,8 +653,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                   var eBlob = await eResp.blob();
                   eFiles.push(new File([eBlob], _er[ei2].name || "image.png", { type: _er[ei2].mediaType || eBlob.type || "image/png" }));
                 }
-                if (eFiles.length > 0 && serviceRefs.conversation && typeof serviceRefs.conversation.createDraftImages === "function") {
-                  var eDrafts = serviceRefs.conversation.createDraftImages(eFiles);
+                if (eFiles.length > 0) {
+                  var eDrafts = createDraftImagesCompat(eFiles, sessionId);
                   var newItems = eDrafts.map(function(im) { return { id: im.id, url: im.previewUrl }; });
                   setEditImages(function(prev) { return prev.concat(newItems); });
                   log("info", "edit", "enterEdit 图片桥接完成", { count: newItems.length });
@@ -689,10 +693,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           try { bDraftText = readCurrentComposerText(""); } catch (eBT) { /* ignore */ }
           var bImgIds = [];
           try {
-            var curInState = props.inputState || null;
-            if (curInState && Array.isArray(curInState.imageIds)) {
-              bImgIds = curInState.imageIds.slice();
-            }
+            bImgIds = getInputImageIdsCompat(props.inputState);
           } catch (eBImgs) { /* ignore */ }
           if (bImgIds.length === 0 && stagedBottomImageIdsRef.current.length > 0) {
             bImgIds = stagedBottomImageIdsRef.current.slice();
@@ -864,8 +865,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                   var df = dt.files[di];
                   if (df.type && df.type.indexOf("image") === 0) imgFiles.push(df);
                 }
-                if (imgFiles.length > 0 && serviceRefs.conversation && typeof serviceRefs.conversation.createDraftImages === "function") {
-                  var dImgs = serviceRefs.conversation.createDraftImages(imgFiles);
+                if (imgFiles.length > 0) {
+                  var dImgs = createDraftImagesCompat(imgFiles, sessionId);
                   var newItems = dImgs.map(function(im) { return { id: im.id, url: im.previewUrl }; });
                   setEditImages(function(prev) { return prev.concat(newItems); });
                   log("info", "edit", "拖入图片已加入编辑", { count: newItems.length });
@@ -963,7 +964,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                       var pf = items[pi].getAsFile();
                       if (pf) {
                         e.preventDefault();
-                        var pImgs = serviceRefs.conversation && typeof serviceRefs.conversation.createDraftImages === "function" ? serviceRefs.conversation.createDraftImages([pf]) : null;
+                        var pImgs = createDraftImagesCompat([pf], sessionId);
                         if (pImgs && pImgs.length > 0) {
                           var pItem = { id: pImgs[0].id, url: pImgs[0].previewUrl, dataUrl: null };
                           setEditImages(function(prev) { var nxt = prev.concat([pItem]); syncEditImgsToPending(nxt); return nxt; });
@@ -1053,8 +1054,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                 // 快照用户确认前输入框已有的图（× 取消时保留；消息自身的图走 attachRefs）
                 var preUserImageIds = [];
                 try {
-                  var sPre = props.inputState || null;
-                  if (sPre && Array.isArray(sPre.imageIds)) preUserImageIds = sPre.imageIds.slice();
+                  preUserImageIds = getInputImageIdsCompat(props.inputState);
                 } catch (e) { /* ignore */ }
                 writePending(sessionId, {
                   type: "recall",

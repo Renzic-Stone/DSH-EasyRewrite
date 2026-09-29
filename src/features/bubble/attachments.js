@@ -1,5 +1,5 @@
 import { log } from "../../core/log.js";
-import { serviceRefs, resolveImageCompat } from "../../core/services.js";
+import { serviceRefs, resolveImageCompat, createDraftImagesCompat, addInputImagesCompat } from "../../core/services.js";
 
 // ---------- 图片桥接（review #3）：跨会话传递交官方全局 draftAttachments 单例，只记 imageIds ----------
 export const pendingAttachIds = [];
@@ -29,12 +29,12 @@ export const latestInputImageIds = []; // 输入框当前图 id 镜像
             log("info", "attach", "已构造 File 并写缓存", { name: name, type: ref.mediaType || blob.type, size: blob.size });
           } catch (e) { log("warn", "attach", "重建单个附件失败", { attachmentId: ref.attachmentId, err: String(e && e.message ? e.message : e) }); }
         }
-        if (files.length > 0 && serviceRefs.conversation && typeof serviceRefs.conversation.createDraftImages === "function" && typeof props.inputActions !== "undefined" && typeof props.inputActions.addImages === "function") {
+        if (files.length > 0) {
           try {
-            var images = serviceRefs.conversation.createDraftImages(files);
+            var images = createDraftImagesCompat(files, sessionId);
             if (images && images.length > 0) {
               var ids = images.map(function (img) { return img.id; });
-              var addOk = props.inputActions.addImages(ids);
+              var addOk = addInputImagesCompat(props.inputActions, ids);
               if (recordPending) { for (var pi = 0; pi < ids.length; pi++) pendingAttachIds.push(ids[pi]); }
               log("info", "attach", "createDraftImages+addImages 成功", { count: images.length, addOk: addOk });
               added = images.length;
@@ -45,8 +45,7 @@ export const latestInputImageIds = []; // 输入框当前图 id 镜像
             log("error", "attach", "createDraftImages 抛错（MIME 校验等）", { filesLen: files.length, err: String(e2 && e2.message ? e2.message : e2), types: files.map(function (f) { return f.type; }) });
           }
         } else {
-          if (files.length === 0) log("warn", "attach", "无可重建文件（缓存未命中+resolveImage/fetch 均失败）", { refsLen: attachmentRefs.length });
-          else log("warn", "attach", "缺 createDraftImages 或 addImages 能力", { hasCCI: !!(serviceRefs.conversation && typeof serviceRefs.conversation.createDraftImages === "function"), hasAdd: !!(props.inputActions && typeof props.inputActions.addImages === "function") });
+          log("warn", "attach", "无可重建文件（缓存未命中+resolveImage/fetch 均失败）", { refsLen: attachmentRefs.length });
         }
       } catch (e) { log("error", "attach", "rebuildDraftAttachments 外层异常", { err: String(e && e.message ? e.message : e) }); }
       return added;

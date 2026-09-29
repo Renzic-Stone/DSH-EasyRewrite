@@ -242,6 +242,6 @@ function apply(ctx) {
 
 export default {
   name: "dsh-easyrewrite",
-  inject: ["slots", "sessions", "workspaces", "conversation", "locale", "modelDirectories"],
+  inject: ["slots", "sessions", "workspaces", "conversation", "uiConversation", "locale", "modelDirectories"],
   apply
 };
