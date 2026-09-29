@@ -47,10 +47,10 @@ function apply(ctx) {
       initAutoUpdateCheck();
     });
 
-    // 注入插件卡片图标饱满度增强样式（摆脱官方 36px 缩小限制，适配 48px 外框）
-    safeRun("icon-style", () => {
+    // 注入插件卡片与组件行视觉优化样式（组件标识统一规范为 DSH-EasyRewrite/<Part>）
+    safeRun("row-labels-polish", () => {
       try {
-        const styleId = "dsh-easyrewrite-icon-style";
+        const styleId = "dsh-easyrewrite-row-polish";
         if (typeof document !== "undefined" && !document.getElementById(styleId)) {
           const style = document.createElement("style");
           style.id = styleId;
@@ -64,11 +64,108 @@ function apply(ctx) {
               max-height: 44px !important;
               object-fit: contain;
             }
+
+            /* 组件列表行：隐藏全小写短 ID，美化模块路径为规范品牌大写格式 */
+            [data-plugin-row="bubble"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row="bubble"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row="bubble"] code:nth-of-type(2)::after {
+              content: "DSH-EasyRewrite/Bubble";
+              font-size: 11.5px;
+            }
+
+            [data-plugin-row="recall"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row="recall"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row="recall"] code:nth-of-type(2)::after {
+              content: "DSH-EasyRewrite/Recall";
+              font-size: 11.5px;
+            }
+
+            [data-plugin-row="history"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row="history"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row="history"] code:nth-of-type(2)::after {
+              content: "DSH-EasyRewrite/History";
+              font-size: 11.5px;
+            }
+
+            [data-plugin-row="other"] code:nth-of-type(1) { display: none !important; }
+            [data-plugin-row="other"] code:nth-of-type(2) { font-size: 0 !important; }
+            [data-plugin-row="other"] code:nth-of-type(2)::after {
+              content: "DSH-EasyRewrite/Other";
+              font-size: 11.5px;
+            }
+
+            /* 组件详情页：同样规范化显示 */
+            [data-plugin-row-detail="dsh-easyrewrite#bubble"] [class*="detailName"]:nth-of-type(1) { display: none !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#bubble"] [class*="detailName"]:nth-of-type(2) code { font-size: 0 !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#bubble"] [class*="detailName"]:nth-of-type(2) code::after {
+              content: "DSH-EasyRewrite/Bubble";
+              font-size: 12px;
+            }
+
+            [data-plugin-row-detail="dsh-easyrewrite#recall"] [class*="detailName"]:nth-of-type(1) { display: none !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#recall"] [class*="detailName"]:nth-of-type(2) code { font-size: 0 !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#recall"] [class*="detailName"]:nth-of-type(2) code::after {
+              content: "DSH-EasyRewrite/Recall";
+              font-size: 12px;
+            }
+
+            [data-plugin-row-detail="dsh-easyrewrite#history"] [class*="detailName"]:nth-of-type(1) { display: none !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#history"] [class*="detailName"]:nth-of-type(2) code { font-size: 0 !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#history"] [class*="detailName"]:nth-of-type(2) code::after {
+              content: "DSH-EasyRewrite/History";
+              font-size: 12px;
+            }
+
+            [data-plugin-row-detail="dsh-easyrewrite#other"] [class*="detailName"]:nth-of-type(1) { display: none !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#other"] [class*="detailName"]:nth-of-type(2) code { font-size: 0 !important; }
+            [data-plugin-row-detail="dsh-easyrewrite#other"] [class*="detailName"]:nth-of-type(2) code::after {
+              content: "DSH-EasyRewrite/Other";
+              font-size: 12px;
+            }
           `;
           document.head.appendChild(style);
           disposers.push(() => {
             try { style.remove(); } catch (e) {}
           });
+        }
+
+        // JS 运行时 DOM 增强：秒级捕获并保证文本替换与短 ID 隐藏
+        if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+          const TARGETS = {
+            "dsh-easyrewrite/bubble": "DSH-EasyRewrite/Bubble",
+            "dsh-easyrewrite/recall": "DSH-EasyRewrite/Recall",
+            "dsh-easyrewrite/history": "DSH-EasyRewrite/History",
+            "dsh-easyrewrite/other": "DSH-EasyRewrite/Other"
+          };
+          const cleanCodes = () => {
+            try {
+              const codeEls = document.querySelectorAll("code");
+              for (let i = 0; i < codeEls.length; i++) {
+                const el = codeEls[i];
+                const text = (el.textContent || "").trim();
+                const matched = TARGETS[text];
+                if (matched) {
+                  el.textContent = matched;
+                  let prev = el.previousElementSibling;
+                  while (prev) {
+                    if (prev.tagName === "CODE") {
+                      prev.style.display = "none";
+                      break;
+                    }
+                    prev = prev.previousElementSibling;
+                  }
+                }
+              }
+            } catch (err) {}
+          };
+          cleanCodes();
+          const obs = new MutationObserver(() => cleanCodes());
+          if (document.body) {
+            obs.observe(document.body, { childList: true, subtree: true });
+            disposers.push(() => {
+              try { obs.disconnect(); } catch (e) {}
+            });
+          }
         }
       } catch (e) {}
     });
