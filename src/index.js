@@ -138,80 +138,37 @@ function apply(ctx) {
           });
         }
 
-        // JS 运行时 DOM 增强：秒级捕获并保证文本替换与短 ID 隐藏，彻底消除根条目
+        // 样式已通过纯 CSS [data-plugin-row*="..."] 100% 覆盖根行隐藏与模块标签品牌化。
+        // 为极致安全与性能，JS 辅助仅做单次轻量防抖兜底，严禁在 MutationObserver 中修改 textContent 防止死循环卡死
         if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
-          const TARGETS = {
-            "dsh-easyrewrite/bubble": "DSH-EasyRewrite/Bubble",
-            "dsh-easyrewrite/recall": "DSH-EasyRewrite/Recall",
-            "dsh-easyrewrite/history": "DSH-EasyRewrite/History",
-            "dsh-easyrewrite/other": "DSH-EasyRewrite/Other"
-          };
-          const cleanCodesAndRows = () => {
-            try {
-              // 1. 规范化代码标签
-              const codeEls = document.querySelectorAll("code");
-              for (let i = 0; i < codeEls.length; i++) {
-                const el = codeEls[i];
-                const text = (el.textContent || "").trim();
-                const matched = TARGETS[text];
-                if (matched) {
-                  el.textContent = matched;
-                  let prev = el.previousElementSibling;
-                  while (prev) {
-                    if (prev.tagName === "CODE") {
-                      prev.style.display = "none";
-                      break;
-                    }
-                    prev = prev.previousElementSibling;
-                  }
-                }
-              }
-
-              // 2. 彻底隐藏插件组件列表中的同名根条目（通过 data-plugin-row）
-              const rows = document.querySelectorAll("li[data-plugin-row]");
-              for (let j = 0; j < rows.length; j++) {
-                const li = rows[j];
-                const attr = (li.getAttribute("data-plugin-row") || "").toLowerCase();
-                const isSub = attr.includes("bubble") || attr.includes("recall") || attr.includes("history") || attr.includes("other");
-                if (attr.includes("dsh-easyrewrite") && !isSub) {
-                  li.style.setProperty("display", "none", "important");
-                }
-              }
-
-              // 3. 增强安全防护：如果在 DSH 插件详情页中，检查 section[data-plugin-rows] 内的 li
-              const section = document.querySelector('section[data-plugin-rows]');
-              if (section) {
-                const allLis = section.querySelectorAll("li");
-                for (let k = 0; k < allLis.length; k++) {
-                  const li = allLis[k];
-                  const text = li.textContent || "";
-                  const hasSub = text.includes("Bubble") || text.includes("bubble") ||
-                                 text.includes("Recall") || text.includes("recall") ||
-                                 text.includes("History") || text.includes("history") ||
-                                 text.includes("Other") || text.includes("other");
-                  if (text.includes("dsh-easyrewrite") && !hasSub) {
+          let rAfId = null;
+          const safePolish = () => {
+            if (rAfId !== null) return;
+            rAfId = requestAnimationFrame(() => {
+              rAfId = null;
+              try {
+                // 仅扫描未标记过的根行进行 CSS 补充兜底，处理后立即打标，绝对单次执行与零重入
+                const unhandled = document.querySelectorAll('li[data-plugin-row*="dsh-easyrewrite"]:not([data-dsh-done])');
+                for (let i = 0; i < unhandled.length; i++) {
+                  const li = unhandled[i];
+                  li.setAttribute("data-dsh-done", "1");
+                  const attr = (li.getAttribute("data-plugin-row") || "").toLowerCase();
+                  const isSub = attr.includes("bubble") || attr.includes("recall") || attr.includes("history") || attr.includes("other");
+                  if (!isSub) {
                     li.style.setProperty("display", "none", "important");
                   }
                 }
-
-                // 统计数字微调（5 项修正为 4 项）
-                const countEl = section.querySelector('[class*="sectionCount"]');
-                if (countEl && countEl.textContent && countEl.textContent.includes("5")) {
-                  countEl.textContent = countEl.textContent
-                    .replace(/5\s*项/, "4 项")
-                    .replace(/5\s*运行中/, "4 运行中")
-                    .replace(/5\s*total/i, "4 total")
-                    .replace(/5\s*running/i, "4 running");
-                }
-              }
-            } catch (err) {}
+              } catch (e) {}
+            });
           };
-          cleanCodesAndRows();
-          const obs = new MutationObserver(() => cleanCodesAndRows());
+
+          safePolish();
+          const obs = new MutationObserver(() => safePolish());
           if (document.body) {
             obs.observe(document.body, { childList: true, subtree: true });
             disposers.push(() => {
               try { obs.disconnect(); } catch (e) {}
+              if (rAfId !== null) cancelAnimationFrame(rAfId);
             });
           }
         }
