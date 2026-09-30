@@ -158,6 +158,15 @@ export function getInputImageIdsCompat(inputState) {
   if (!inputState) return [];
   if (Array.isArray(inputState.attachmentIds)) return inputState.attachmentIds.slice();
   if (Array.isArray(inputState.imageIds)) return inputState.imageIds.slice();
+  if (inputState.state && typeof inputState.state.getSnapshot === "function") {
+    try {
+      var snap = inputState.state.getSnapshot();
+      if (snap) {
+        if (Array.isArray(snap.attachmentIds)) return snap.attachmentIds.slice();
+        if (Array.isArray(snap.imageIds)) return snap.imageIds.slice();
+      }
+    } catch (e) {}
+  }
   return [];
 }
 

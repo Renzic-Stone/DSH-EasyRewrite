@@ -1110,15 +1110,38 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                       var cMode = draftConflictMode();
                       var vMode = recallVisualMode();
                       var rSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
+                      var rcAt2 = [];
+                      try {
+                        if (data && Array.isArray(data.content)) {
+                          for (var rcAi2 = 0; rcAi2 < data.content.length; rcAi2++) {
+                            var rcAb2 = data.content[rcAi2];
+                            if (rcAb2 && rcAb2.type === "image" && rcAb2.attachment && typeof rcAb2.attachment.attachmentId === "string") {
+                              rcAt2.push({ attachmentId: rcAb2.attachment.attachmentId, mediaType: rcAb2.attachment.mediaType, name: rcAb2.attachment.name });
+                            }
+                          }
+                        }
+                      } catch (eRc) { /* ignore */ }
+                      var preUserImageIds2 = [];
+                      try {
+                        preUserImageIds2 = getInputImageIdsCompat(props.inputState);
+                      } catch (ePre) { /* ignore */ }
                       writePending(sessionId, {
                         type: "recall", targetKey: myKey, targetSeq: rSeq, draftText: text,
                         originalDraft: draftRef.current, conflictMode: cMode, visualMode: vMode,
+                        attachRefs: rcAt2, preUserImageIds: preUserImageIds2,
                         updatedAt: Date.now()
                       });
                       var ia2 = props.inputActions;
                       if (ia2 && typeof ia2.setDraft === "function") {
                         ia2.setDraft(cMode === "merge" && draftRef.current !== "" ? draftRef.current + "\n" + text : text);
                       }
+                      try {
+                        if (rcAt2.length > 0) {
+                          rebuildDraftAttachments(rcAt2, props, sessionId, true).then(function (n) {
+                            log("info", "attach", "直接撤回后输入框图预览重建", { count: n, total: rcAt2.length });
+                          });
+                        }
+                      } catch (eAt2) { log("warn", "attach", "直接撤回图形预览重建失败", { err: String(eAt2 && eAt2.message ? eAt2.message : eAt2) }); }
                       log("info", "recall", "pending set（确认关闭，直接待定）", { targetSeq: rSeq });
                     }
                   }, iconImg(ICONS.recall, L.recall), "recall-key"),

@@ -8,6 +8,7 @@ import { familyOfSession } from "../../core/session.js";
 import { getChatSnapshot, hasChatSnapshot } from "../../core/constants.js";
 import { extractText } from "../../core/ui.js";
 import { readPending, writePending } from "../recall/store.js";
+import { stageOutgoingFiles } from "../bubble/attachments.js";
 
     function goToVersion(fam, sessionId, nextIndex, props, cleanupRef) {
       var next = fam.versions[nextIndex];
@@ -73,7 +74,7 @@ import { readPending, writePending } from "../recall/store.js";
      * @param text - edit 模式的修改后文本
      * @param props - 组件 inject 面
      */
-    function resetConversation(sessionId, mode, text, props, imageIds, selOverride, stagedDraft) {
+    function resetConversation(sessionId, mode, text, props, imageIds, selOverride, stagedDraft, outgoingFiles) {
       log("info", "reset", "首条消息重置对话", { sessionId: sessionId, mode: mode });
       // v2.1.1：目标会话（父版本或空白新会话）发送前需要恢复当前模型/挡位
       // v2.2：气泡编辑 chip 的本地选择优先（selOverride），撤回键路径不传 → 原语义
@@ -99,6 +100,9 @@ import { readPending, writePending } from "../recall/store.js";
         var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
         if (parentId) {
           if (mode === "edit" && typeof text === "string") {
+            if (Array.isArray(outgoingFiles) && outgoingFiles.length > 0) {
+              stageOutgoingFiles(parentId, outgoingFiles);
+            }
             try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
           }
           var doOpenParent = function () {
@@ -131,6 +135,9 @@ import { readPending, writePending } from "../recall/store.js";
           wsConnector.connectWorkspace(wsId).then(function (newId) {
             if (!newId) return;
             if (mode === "edit" && typeof text === "string") {
+              if (Array.isArray(outgoingFiles) && outgoingFiles.length > 0) {
+                stageOutgoingFiles(newId, outgoingFiles);
+              }
               try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
             }
             log("info", "reset", "空白新会话已就绪", { newId: newId, mode: mode });

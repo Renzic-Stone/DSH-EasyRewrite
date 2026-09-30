@@ -9,12 +9,21 @@ import { safeOpenSession } from "./safe-session.js";
 import { resetConversation } from "../history/pager.js";
 import { requestCleanGhostQueue } from "./ghost.js";
 import { findPrimaryButton, isStopButton, setPrimaryButtonSendingState, readCurrentComposerText } from "./buttons.js";
-import { pendingAttachIds, clearPendingAttachIds, latestInputImageIds } from "../bubble/attachments.js";
+import {
+  pendingAttachIds,
+  clearPendingAttachIds,
+  latestInputImageIds,
+  collectOutgoingFiles,
+  stageOutgoingFiles,
+  consumeStagedFiles,
+  rebuildDraftAttachments
+} from "../bubble/attachments.js";
 import {
   addInputImagesCompat,
   removeInputImageCompat,
   pruneInputImagesCompat,
-  getInputImageIdsCompat
+  getInputImageIdsCompat,
+  createDraftImagesCompat
 } from "../../core/services.js";
 
     function RecallBanner(props) {
@@ -352,6 +361,11 @@ import {
           var msel = props.modelSel ? props.modelSel.capture(sid) : null;
           // review L5：日志去内容化（只记长度，不落明文）
           log("info", "recall", "发送内容（修改后）", { sendLen: sendText.length, modelSel: !!msel });
+          // 0) 撤回前收集：提取待发送的原生 File 列表（防老会话归档 releaseDraftAttachment 导致附件丢失）
+          var outgoingFiles = collectOutgoingFiles(sid, props.inputState);
+          var imgIds = getInputImageIdsCompat(props.inputState);
+          log("info", "attach", "撤回收集完成（待发图片与ID）", { fileCount: outgoingFiles.length, idCount: imgIds.length });
+
           // review #7：client 直算边界（判定树），仅在快照无法判定时走保留的 host 路由 fallback
           var localB = computeRecallBoundary(props, p.targetSeq);
           var boundary = null;
@@ -362,7 +376,7 @@ import {
             // 真首条（窗口内无闭合回合且无更早历史）→ 重置对话
             log("info", "recall", "本地判定：无前置边界 → 重置对话");
             showRecallError(L.resetNotice);
-            resetConversation(sid, "edit", sendText, props, latestInputImageIds.slice());
+            resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
             return;
           } else {
             // host fallback（localB=null 或 host-fallback）
@@ -378,7 +392,7 @@ import {
               log("warn", "recall", "撤回失败（发送中止）", { error: errCode });
               if (errCode === "turn-open" || errCode === "no-boundary") {
                 showRecallError(L.resetNotice);
-                resetConversation(sid, "edit", sendText, props, latestInputImageIds.slice());
+                resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
               } else {
                 showRecallError(L.errGeneric);
                 setPrimaryButtonSendingState(false);
@@ -388,10 +402,6 @@ import {
             }
             boundary = data.boundary;
           }
-          // 0) 撤回前收集（review #2/#3）：读镜像——UserBubbleView 渲染时已从官方 useInput 快照同步，
-          //    覆盖确认时重建的图 + 用户手动加的图 − 用户删除的图（即发送瞬间的真实选择）。
-          var imgIds = latestInputImageIds.slice();
-          log("info", "attach", "撤回收集完成（镜像 imageIds）", { count: imgIds.length });
           // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题。
           //    官方 fork(atSeq) 即截断边界器；fork-unavailable 按原文子串分流：
           //    "has not completed the turn"=回合未结束→提示等待；"has no completed turn to fork from"=无前置边界→重置对话。
@@ -407,16 +417,28 @@ import {
               showRecallError(L.turnOpenNotice || L.errGeneric); // 回合未结束：等待回复完成
             } else if (/has no completed turn to fork from/i.test(em)) {
               showRecallError(L.resetNotice);
-              resetConversation(sid, "edit", sendText, props, latestInputImageIds.slice());
+              resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
             } else {
               showRecallError(L.errGeneric);
             }
             return;
           }
+          // 跨会话图片保护：将收集到的 File 列表暂存给目标新会话
+          if (outgoingFiles.length > 0) {
+            stageOutgoingFiles(newId, outgoingFiles);
+          }
           // Issue #10 根治防御：fork 成功返回即请求 Host 端物理拔除继承的幽灵旧消息
           await requestCleanGhostQueue(newId);
           // review M6：resume-send 带时间戳（30s TTL，防陈旧草稿幽灵自动发送）
-          try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: sendText, t: Date.now(), imageIds: imgIds, sel: msel })); } catch (e) { /* ignore */ }
+          try {
+            localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({
+              draftText: sendText,
+              t: Date.now(),
+              imageIds: imgIds,
+              attachRefs: (p && Array.isArray(p.attachRefs)) ? p.attachRefs : [],
+              sel: msel
+            }));
+          } catch (e) { /* ignore */ }
           // 2) 无痕替换：归档原会话 → 打开新会话
           var archived = false;
           try {
@@ -521,12 +543,35 @@ import {
           try {
             ia.setDraft(r.draftText);
             log("info", "recall", "resume：回填草稿并自动发送", { sessionId: sessionId, tries: tries, imgs: Array.isArray(r.imageIds) ? r.imageIds.length : 0, hasSel: !!(r.sel && props.modelSel) });
-            // 图片桥接（review #3 简化版）：官方 draftAttachments 全局单例跨会话存活——
-            // resume 直接 addImages(发送瞬间的 imageIds) 后 submit；消息内容完全由我们构造，无需校验。
-            var savedIds = Array.isArray(r.imageIds) ? r.imageIds : [];
-            if (savedIds.length > 0) {
-              try { addInputImagesCompat(ia, savedIds); } catch (e) { log("warn", "attach", "addImages 异常（忽略，文字照发）", { err: String(e && e.message ? e.message : e) }); }
-            }
+
+            // 跨会话图片草稿重建：优先使用暂存的 File 重新在目标会话生成草稿，突破老会话 release 限制
+            var prepareImages = async function () {
+              var stagedFiles = consumeStagedFiles(sessionId);
+              if (stagedFiles && stagedFiles.length > 0) {
+                try {
+                  var newDrafts = createDraftImagesCompat(stagedFiles, sessionId);
+                  if (newDrafts && newDrafts.length > 0) {
+                    var newIds = newDrafts.map(function (d) { return d.id; });
+                    addInputImagesCompat(ia, newIds);
+                    log("info", "attach", "新会话草稿附件已重建并填入", { count: newIds.length });
+                    return newIds;
+                  }
+                } catch (eDrafts) {
+                  log("warn", "attach", "新会话草稿附件创建异常", { err: String(eDrafts && eDrafts.message ? eDrafts.message : eDrafts) });
+                }
+              } else if (Array.isArray(r.attachRefs) && r.attachRefs.length > 0) {
+                try {
+                  var cnt = await rebuildDraftAttachments(r.attachRefs, props, sessionId, false);
+                  log("info", "attach", "通过 attachRefs 重建完成", { count: cnt });
+                } catch (eRb) {
+                  log("warn", "attach", "通过 attachRefs 重建失败", { err: String(eRb && eRb.message ? eRb.message : eRb) });
+                }
+              } else if (Array.isArray(r.imageIds) && r.imageIds.length > 0) {
+                try { addInputImagesCompat(ia, r.imageIds); } catch (e) { /* ignore */ }
+              }
+              return [];
+            };
+
             // Issue #10 深度防御：清空宿主 fork 继承而来的悬空 next-turn 幽灵队列
             // DSH 的 sessions.fork 机制会贪婪复制 turn/end 到 turn/start 之间的非回合事件，
             // 导致目标消息当初发送时的 agent/inbox/spliced 入队事件被复制到新会话，
@@ -614,12 +659,15 @@ import {
                 }, 60);
               });
             };
-            // v2.1.1：先把捕获的原模型/挡位写进新会话（官方 selectModel 持久化通道），再自动发送
-            if (r.sel && props.modelSel) {
-              props.modelSel.apply(sessionId, r.sel).then(doSubmit, doSubmit);
-            } else {
-              doSubmit();
-            }
+
+            prepareImages().finally(function () {
+              // v2.1.1：先把捕获的原模型/挡位写进新会话（官方 selectModel 持久化通道），再自动发送
+              if (r.sel && props.modelSel) {
+                props.modelSel.apply(sessionId, r.sel).then(doSubmit, doSubmit);
+              } else {
+                doSubmit();
+              }
+            });
           } catch (eRun) {
             log("error", "recall", "resume 执行异常", { sessionId: sessionId, err: String(eRun && eRun.message ? eRun.message : eRun) });
           }
