@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-easyrewrite
 
 ### Bubble Inline Edit (Rewrite) — Shipped (M2/M4)
 - **Click to edit**: Click your message bubble to enter inline editing directly (original Markdown source preserved), Esc to cancel / Ctrl+Enter to confirm.
-- **Adjustable width modes**: Compact (starts at bubble width, up to 360px) / Standard (fixed 360px) / Expanded (full message width) / Custom, with automatic vertical expansion and smooth inner scrolling.
+- **Five width modes**: **Original (default — the editor matches the bubble's exact width and never goes shorter than the bubble, so entering edit no longer resizes the bubble)** / Compact (starts at bubble width, up to 360px) / Standard (fixed 360px) / Expanded (full message width) / Custom, with automatic vertical expansion and smooth inner scrolling.
 - **On-the-spot model & effort switching**: Native dropdown menu embedded inside the bubble editor allows instant switching of provider, model, and reasoning effort for the resend.
 - **Rich image support & drag-drop management**: Multi-image messages render in equal-width thumbnail strips, supporting individual `×` deletion, clipboard paste, and drag-and-drop addition. Edits survive tab switching and page reloads.
 
@@ -89,7 +89,7 @@ dsh plugin --profile web add dsh-easyrewrite
 - **Integrated settings card**: Integrates into **Settings → Plugins → EasyRewrite** with native design tokens and automatic trilingual localization (中文 / English / 日本語).
 - **Rich toggles & fine-grained control**:
   - Bubble edit toggle & fallback recall button
-  - Bubble editor width presets (Compact / Standard / Expanded / Custom)
+  - Bubble editor width presets (Original / Compact / Standard / Expanded / Custom)
   - Recall confirmation capsule & visual display modes (Simple / Minimal / Info)
   - Customizable shortcut recording (trigger recall with one keystroke when composer is unfocused)
   - Composer conflict resolution (Overwrite mode safely restores pre-existing draft upon send/cancel)
