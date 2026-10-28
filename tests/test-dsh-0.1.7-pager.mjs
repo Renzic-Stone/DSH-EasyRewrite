@@ -16,6 +16,8 @@ console.log('[Test 1] 静态特征与版本常量检测...');
 assert.ok(bundleCode.includes('0.1.7-rc.2'), '构建产物必须包含 0.1.7-rc.2 验证上限');
 assert.ok(bundleCode.includes('invokeOpenSession'), '构建产物必须包含 invokeOpenSession 函数');
 assert.ok(!bundleCode.includes('openSession: function (id) { ctx.sessions.open(id); }'), '构建产物不得包含裸调 ctx.sessions.open 的注入');
+assert.ok(bundleCode.includes('props.loadImage'), '构建产物必须包含图片缺失降级通道');
+assert.ok(bundleCode.includes('logThrottle'), '构建产物必须包含高频日志防轰炸节流');
 console.log('✓ 静态检测全部通过');
 
 // =========================================================================
@@ -184,6 +186,19 @@ assert.equal(openedSessionByLegacySessions, 'target-sess-legacy', '老版本下�
 assert.equal(legacyPager.currentSessionId(), 'sess-legacy-current', '老版本下必须通过 s.current 获取会话 ID');
 
 console.log('✓ DSH ≤0.1.5 老版本运行环境测试通过');
+
+// =========================================================================
+// [Test 4] 翻页器与图片兼容防御安全性检测
+// =========================================================================
+console.log('[Test 4] 翻页器与图片渲染兼容防御安全性检测...');
+const vpIdx = bundleCode.indexOf('function VersionPager');
+assert.ok(vpIdx !== -1, 'VersionPager 必须存在于构建产物');
+const vpCode = bundleCode.slice(vpIdx, vpIdx + 2500);
+const hookIdx = vpCode.indexOf('var snapshot = getChatSnapshot(props);');
+const famIdx = vpCode.indexOf('var family = familyOfSession');
+assert.ok(hookIdx !== -1, 'getChatSnapshot 必须在 VersionPager 内调用');
+assert.ok(hookIdx < famIdx, 'getChatSnapshot 必须严格前置于 familyOfSession 和 return 之前，防止 React #300 崩溃');
+console.log('✓ 翻页器 Hook 顺位与图片防御验证通过');
 
 console.log('\n======================================');
 console.log('✔ 所有 DSH 0.1.7 翻页器与跨版本会话测试全部通过！');
