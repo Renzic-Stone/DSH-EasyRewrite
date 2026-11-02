@@ -14,10 +14,20 @@ import { getSetting } from "../../core/constants.js";
      * - 标准 standard：与紧凑唯一区别——内容不满一行时自动扩成一行宽（360px）。
      * - 两档超过一行后都保持宽度不再主动扩张（高度自然换行增长）。
      */
-    function editWidthFor(mode, text, initW) {
-      // 扩展："100%" 撑满消息行（此前写死 748px 是旧窗口宽度遗物——内容列更宽时左侧够不到其他文字的左对齐线，2026-09-04 用户实测反馈）
+    export function calcBtnRowMinWidth(cancelText, confirmText) {
+      var t1 = String(cancelText || "取消");
+      var t2 = String(confirmText || "确定");
+      var textW = 0;
+      for (var i = 0; i < t1.length; i++) textW += t1.charCodeAt(i) > 0x2e7f ? 13 : 8;
+      for (var j = 0; j < t2.length; j++) textW += t2.charCodeAt(j) > 0x2e7f ? 13 : 8;
+      // 两个按钮各自 padding: 4px 16px (共 64px) + 按钮 gap: 8px + 编辑框 padding: 8px 14px (共 28px)
+      return textW + 100;
+    }
+
+    function editWidthFor(mode, text, initW, minSafetyW) {
+      var safety = Math.max(minSafetyW || 160, 160);
       if (mode === "extended") return "100%";
-      if (mode === "custom") return editWidthCustom();  // 自定义
+      if (mode === "custom") return Math.max(editWidthCustom(), safety);
       var linesArr = String(text || "").split("\n");
       var contentW = 0;
       for (var i = 0; i < linesArr.length; i++) {
@@ -28,10 +38,10 @@ import { getSetting } from "../../core/constants.js";
       }
       contentW = Math.min(contentW, 360);               // 气泡上限 360px
       if (mode === "compact") {
-        var base = Math.max(initW || 200, 44);          // 紧凑：严格气泡原宽起步（保底防 0）
+        var base = Math.max(initW || 200, safety);      // 紧凑：气泡原宽起步，且绝不窄于按钮安全宽度
         return Math.max(base, contentW);                // 随打字慢慢扩大，绝不跳变
       }
-      return Math.max(360, contentW);                   // 标准：不满一行自动扩成一行宽
+      return Math.max(Math.max(360, safety), contentW); // 标准：不满一行自动扩成一行宽
     }
     /** 编辑宽度档位：compact 紧凑 / standard 标准 / extended 扩展 / custom 自定义。兼容旧值（bubble/wrap/composer）。 */
     function editWidthMode() {

@@ -2,23 +2,32 @@ import * as React from "react";
 import { IconChevronLeftOutline, IconChevronRightOutline } from "../../core/icons.js";
 import { useUILocaleDict } from "../../core/i18n.js";
 import { log } from "../../core/log.js";
-import { serviceRefs } from "../../core/services.js";
+import { serviceRefs, getUiWorkspace } from "../../core/services.js";
 import { safeOpenSession } from "../recall/safe-session.js";
 import { familyOfSession } from "../../core/session.js";
 import { getChatSnapshot, hasChatSnapshot } from "../../core/constants.js";
 import { extractText } from "../../core/ui.js";
 import { readPending, writePending } from "../recall/store.js";
-import { stageOutgoingFiles } from "../bubble/attachments.js";
+import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments.js";
 
     function goToVersion(fam, sessionId, nextIndex, props, cleanupRef) {
       var next = fam.versions[nextIndex];
       if (!next) return;
       log("info", "pager", "切换版本", { from: sessionId, to: next, index: nextIndex + 1, count: fam.versions.length });
-      // 历史版本都是归档会话（无痕替换副作用），先恢复再打开；恢复失败也照常打开（幂等）
+
+      // 影子仓储保障：切换前自动备份当前会话物理快照
+      try {
+        fetch("/bubble/vault/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId, summary: "切换版本前自动保存" }),
+          keepalive: true
+        }).catch(function () {});
+      } catch (eVs) {}
+
       var doOpen = function () {
         safeOpenSession(next, props);
-        // 等当前会话确认为 next（轮询 current，不猜时间）后，归档家族其余版本——列表只保留目标一个。
-        // open 未确认（超时 8s）则放弃归档，绝不误伤任何会话。
+        // 等当前会话确认为 next（轮询 current，不猜时间）后，将家族其余版本移入影子仓储，彻底不再调用 archiveSession 污染侧栏
         if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
         var attempts = 0;
         cleanupRef.current = setInterval(function () {
@@ -28,11 +37,16 @@ import { stageOutgoingFiles } from "../bubble/attachments.js";
             if (cur === next) {
               clearInterval(cleanupRef.current);
               cleanupRef.current = null;
-              if (typeof props.archiveSession === "function") {
-                fam.versions.forEach(function (vid) {
-                  if (vid !== next) props.archiveSession(vid);
-                });
-              }
+              fam.versions.forEach(function (vid) {
+                if (vid !== next) {
+                  fetch("/bubble/vault/retire-session", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ sessionId: vid }),
+                    keepalive: true
+                  }).catch(function () {});
+                }
+              });
               return;
             }
           } catch (e) { /* ignore */ }
@@ -66,47 +80,141 @@ import { stageOutgoingFiles } from "../bubble/attachments.js";
       return false;
     }
 
+    /** 在原会话所属的同一个工作区下创建全新空白子会话（用于首条消息无前置闭合边界时的撤回/重编辑）。
+     * 优先使用 DSH 0.2 官方标准接口 ctxSessions.create({ workspaceId })，降级使用 getUiWorkspace().connectWorkspace(wsId)。
+     */
+    async function createBlankChildSession(sessionId, props) {
+      var wsId = null;
+      var cwd = null;
+      try {
+        if (props && props.ctxWorkspaces && typeof props.ctxWorkspaces.list === "object" && typeof props.ctxWorkspaces.list.getSnapshot === "function") {
+          var wsList = props.ctxWorkspaces.list.getSnapshot();
+          if (wsList && Array.isArray(wsList.items)) {
+            for (var wi = 0; wi < wsList.items.length; wi++) {
+              var wItem = wsList.items[wi];
+              if (wItem && Array.isArray(wItem.sessionIds) && wItem.sessionIds.indexOf(sessionId) >= 0) {
+                wsId = wItem.workspaceId;
+                cwd = wItem.path || wItem.cwd || null;
+                break;
+              }
+            }
+          }
+        }
+      } catch (eWs) { /* ignore */ }
+
+      try {
+        if (!cwd && props && props.ctxSessions && typeof props.ctxSessions.list === "object" && typeof props.ctxSessions.list.getSnapshot === "function") {
+          var sList = props.ctxSessions.list.getSnapshot();
+          if (sList && Array.isArray(sList.items)) {
+            for (var si = 0; si < sList.items.length; si++) {
+              var sItem = sList.items[si];
+              if (sItem && sItem.id === sessionId) {
+                cwd = sItem.cwd || null;
+                if (!wsId && sItem.workspaceId) wsId = sItem.workspaceId;
+                break;
+              }
+            }
+          }
+        }
+      } catch (eSess) { /* ignore */ }
+
+      // 通道 1：DSH 0.2 SessionController.create({ workspaceId }) —— 铸造同工作区全新空白会话
+      if (props && props.ctxSessions && typeof props.ctxSessions.create === "function") {
+        try {
+          var createOpts = wsId ? { workspaceId: wsId } : (cwd ? { cwd: cwd } : {});
+          var createdId = await props.ctxSessions.create(createOpts);
+          if (typeof createdId === "string" && createdId.length > 0) {
+            log("info", "reset", "通过 ctxSessions.create 创建空白会话成功", { sessionId: sessionId, newId: createdId, wsId: wsId });
+            return createdId;
+          }
+        } catch (eCreate) {
+          log("warn", "reset", "ctxSessions.create 创建空白会话失败，尝试降级通道", { err: String(eCreate && eCreate.message ? eCreate.message : eCreate) });
+        }
+      }
+
+      // 通道 2：uiWorkspace.connectWorkspace(wsId)
+      var uiWs = getUiWorkspace();
+      var wsConnector = (uiWs && typeof uiWs.connectWorkspace === "function")
+        ? uiWs
+        : ((props && props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") ? props.ctxWorkspaces : null);
+      if (wsId && wsConnector) {
+        try {
+          var connectedId = await wsConnector.connectWorkspace(wsId);
+          if (typeof connectedId === "string" && connectedId.length > 0) {
+            log("info", "reset", "通过 connectWorkspace 创建空白会话成功", { sessionId: sessionId, newId: connectedId, wsId: wsId });
+            return connectedId;
+          }
+        } catch (eConn) {
+          log("warn", "reset", "connectWorkspace 创建空白会话失败", { err: String(eConn && eConn.message ? eConn.message : eConn) });
+        }
+      }
+
+      return null;
+    }
+
     /** 极限场景重置（首条消息/截断会话首条，无前置闭合边界，无法 fork）：
-     * - 家族会话（截断/分叉产物，版本 ≥2）：归档当前 → 恢复并打开**父版本**（上一次模型回复处）重新开始；
-     *   编辑模式经 resume 机制把修改文本带到父版本自动重发。
-     * - 全新会话首条（无家族）：归档当前 → 回到空白新对话（官方 project() 检测归档即回 hero）。
+     * 严格遵循「先保存快照 → 先创建并打开目标新会话 → 最后退役旧会话入影子仓储」时序，
+     * 绝不在打开新会话前销毁当前会话（根治停留在 removed 死会话导致禁入红圈与文字重影）。
      * @param mode - "recall" | "edit"
      * @param text - edit 模式的修改后文本
      * @param props - 组件 inject 面
      */
-    function resetConversation(sessionId, mode, text, props, imageIds, selOverride, stagedDraft, outgoingFiles) {
+    function resetConversation(sessionId, mode, text, props, imageIds, selOverride, stagedDraft, outgoingFiles, bottomFiles) {
       log("info", "reset", "首条消息重置对话", { sessionId: sessionId, mode: mode });
-      // v2.1.1：目标会话（父版本或空白新会话）发送前需要恢复当前模型/挡位
-      // v2.2：气泡编辑 chip 的本地选择优先（selOverride），撤回键路径不传 → 原语义
       var msel = selOverride || (props.modelSel ? props.modelSel.capture(sessionId) : null);
       writePending(sessionId, null);
-      // 1) 归档当前会话（两种场景都需要；project() 检测 current 归档 → 自动回 hero/父版本打开后列表更新）
+
+      // 0) 预先保存当前会话完整快照入影子仓储
       try {
-        var archiver = typeof props.archiveSession === "function"
-          ? props.archiveSession
-          : (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function"
-            ? function (id) { return props.ctxWorkspaces.archiveSession(id); }
-            : null);
-        if (archiver) {
-          Promise.resolve(archiver(sessionId)).catch(function () { log("warn", "reset", "归档失败", { sessionId: sessionId }); });
-        } else {
-          log("warn", "reset", "归档能力不可用", { sessionId: sessionId });
+        fetch("/bubble/vault/save", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ sessionId: sessionId, summary: "首条撤回前完整快照" }),
+          keepalive: true
+        }).catch(function () {});
+      } catch (eSave) { /* ignore */ }
+
+      // 辅助函数：打开目标会话成功后，再将原会话移入影子仓储并继承版本链
+      function openTargetThenRetire(targetId) {
+        if (!targetId) return false;
+        if (mode === "edit" && typeof text === "string") {
+          if (Array.isArray(outgoingFiles) && outgoingFiles.length > 0) {
+            stageOutgoingFiles(targetId, outgoingFiles);
+          }
+          if (Array.isArray(bottomFiles) && bottomFiles.length > 0) {
+            stageBottomDraftFiles(targetId, bottomFiles);
+          }
+          try {
+            localStorage.setItem("dsh-easyrewrite:resume-send:" + targetId, JSON.stringify({
+              draftText: text,
+              t: Date.now(),
+              imageIds: imageIds || [],
+              sel: msel,
+              stagedDraft: stagedDraft || null
+            }));
+          } catch (eLs) { /* ignore */ }
         }
-      } catch (e) { /* ignore */ }
-      // 2) 场景 2：家族父版本（截断/分叉会话 → 回到上一次模型回复）
+        var opened = safeOpenSession(targetId, props);
+        if (opened) {
+          try {
+            fetch("/bubble/vault/retire-session", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sessionId, replacementSessionId: targetId }),
+              keepalive: true
+            }).catch(function () {});
+          } catch (eRet) { /* ignore */ }
+        }
+        return opened;
+      }
+
+      // 1) 场景 2：家族父版本（截断/分叉会话 → 回到上一次模型回复）
       try {
         var fam = familyOfSession(sessionId, props.ctxSessions);
-        log("info", "reset", "场景2家族判定", { sessionId: sessionId, found: !!fam, verLen: fam ? fam.versions.length : -1, index: fam ? fam.index : -1 });
         var parentId = fam && fam.versions.length >= 2 && fam.index > 0 ? fam.versions[fam.index - 1] : null;
         if (parentId) {
-          if (mode === "edit" && typeof text === "string") {
-            if (Array.isArray(outgoingFiles) && outgoingFiles.length > 0) {
-              stageOutgoingFiles(parentId, outgoingFiles);
-            }
-            try { localStorage.setItem("dsh-easyrewrite:resume-send:" + parentId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
-          }
           var doOpenParent = function () {
-            safeOpenSession(parentId, props);
+            openTargetThenRetire(parentId);
           };
           if (typeof props.restoreSession === "function") {
             try { props.restoreSession(parentId).then(doOpenParent, doOpenParent); return; } catch (e) { /* fallthrough */ }
@@ -115,57 +223,138 @@ import { stageOutgoingFiles } from "../bubble/attachments.js";
           return;
         }
       } catch (e) { /* ignore */ }
-      // 3) 场景 1：全新会话首条 → 无缝打开空白新会话（编辑模式经 resume 自动发送编辑文本）
-      try {
-        var wsId = null;
-        if (props.ctxWorkspaces && typeof props.ctxWorkspaces.list === "object" && typeof props.ctxWorkspaces.list.getSnapshot === "function") {
-          var wsList = props.ctxWorkspaces.list.getSnapshot();
-          if (wsList && Array.isArray(wsList.items)) {
-            for (var wi = 0; wi < wsList.items.length; wi++) {
-              if (wsList.items[wi] && Array.isArray(wsList.items[wi].sessionIds) && wsList.items[wi].sessionIds.indexOf(sessionId) >= 0) {
-                wsId = wsList.items[wi].workspaceId;
-                break;
-              }
-            }
-          }
-        }
-          log("info", "reset", "场景1工作区定位", { sessionId: sessionId, wsId: wsId, hasConnect: !!(props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") });
-        var wsConnector = (serviceRefs.uiWorkspace && typeof serviceRefs.uiWorkspace.connectWorkspace === "function") ? serviceRefs.uiWorkspace : ((props.ctxWorkspaces && typeof props.ctxWorkspaces.connectWorkspace === "function") ? props.ctxWorkspaces : null);
-        if (wsId && wsConnector) {
-          wsConnector.connectWorkspace(wsId).then(function (newId) {
-            if (!newId) return;
-            if (mode === "edit" && typeof text === "string") {
-              if (Array.isArray(outgoingFiles) && outgoingFiles.length > 0) {
-                stageOutgoingFiles(newId, outgoingFiles);
-              }
-              try { localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({ draftText: text, t: Date.now(), imageIds: imageIds || [], sel: msel, stagedDraft: stagedDraft || null })); } catch (e) { /* ignore */ }
-            }
-            log("info", "reset", "空白新会话已就绪", { newId: newId, mode: mode });
-            safeOpenSession(newId, props);
-          }).catch(function () { log("warn", "reset", "空白会话创建失败（回 hero）"); });
+
+      // 2) 场景 1：全新会话首条 → 创建同工作区空白新会话，打开后再退役旧会话并继承版本链
+      createBlankChildSession(sessionId, props).then(function (newId) {
+        if (!newId) {
+          log("warn", "reset", "空白新会话创建失败，保持当前会话可用");
           return;
         }
-      } catch (e) { /* ignore */ }
-      // 兜底：归档已生效，官方自动回 hero
-      log("info", "reset", "重置完成（兜底路径）", { sessionId: sessionId, mode: mode });
+        openTargetThenRetire(newId);
+      }).catch(function (err) {
+        log("warn", "reset", "空白会话重置异常", { err: String(err && err.message ? err.message : err) });
+      });
+    }
+
+    function goToVaultVersion(vaultManifest, sessionId, nextIndex, props, setVaultManifest, vaultManifestRef) {
+      if (!vaultManifest || !Array.isArray(vaultManifest.versions)) return;
+      var targetVer = vaultManifest.versions[nextIndex];
+      if (!targetVer || typeof targetVer.versionNumber !== "number") return;
+      log("info", "pager", "切换影子仓储版本", {
+        sessionId: sessionId,
+        targetVersionNumber: targetVer.versionNumber,
+        index: nextIndex + 1,
+        count: vaultManifest.versions.length
+      });
+      try {
+        fetch("/bubble/vault/restore", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            targetVersionNumber: targetVer.versionNumber
+          }),
+          keepalive: true
+        }).then(function (r) { return r.json(); }).then(function (data) {
+          if (data && data.ok && data.manifest) {
+            if (vaultManifestRef) vaultManifestRef.current = data.manifest;
+            if (typeof setVaultManifest === "function") setVaultManifest(data.manifest);
+            safeOpenSession(sessionId, props);
+            if (typeof window !== "undefined" && window.location && typeof window.location.reload === "function") {
+              setTimeout(function () { window.location.reload(); }, 60);
+            }
+          }
+        }).catch(function (err) {
+          log("warn", "pager", "影子仓储版本还原失败", { err: String(err && err.message ? err.message : err) });
+        });
+      } catch (e) {}
     }
 
     /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
      * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 或键盘 ←/→
-     * 切换版本（sessions.open 兄弟会话），切换后滚动锚定保持文本位置不动。 */
+     * 切换版本（优先通过影子仓储 /bubble/vault/list & /restore 原位切换，回退支持兄弟会话切换）。 */
     function VersionPager(props) {
-      var sessionId = props.sessionId;
+      var sessionId = (props && props.sessionId) || "";
       // —— hooks 无条件前置（React 规则：任何 return null 不得出现在 hooks 之前，否则 hook 数量漂移 → error #300）——
       var L = useUILocaleDict();
       var cleanupRef = React.useRef(null);
-      // 注意：没有卸载清理！切换会卸载组件——卸载时绝不能清掉未执行的归档定时器
-      //（归档必须在切换后照常执行；竞态防护只在 goToVersion 内 clear 前一次的）
+      var vaultState = React.useState(null);
+      var vaultManifest = vaultState[0];
+      var setVaultManifest = vaultState[1];
+      var vaultManifestRef = React.useRef(null);
+      var snapshot = getChatSnapshot(props);
+
+      // 仅针对最后一个回合的助理回答/TurnTail 查询影子仓储版本清单
+      var isLastTail = false;
+      try {
+        if (snapshot && Array.isArray(snapshot.order) && snapshot.nodes && typeof snapshot.nodes.get === "function") {
+          var order = snapshot.order;
+          for (var oi = order.length - 1; oi >= 0; oi--) {
+            var nd = snapshot.nodes.get(order[oi]);
+            if (nd && nd.kind === "turn-tail") {
+              if (nd.data && nd.data.closing && nd.data.closing.finalNode) {
+                isLastTail = nd.data.closing.finalNode.messageId === props.messageId;
+              } else if (props && props.messageId) {
+                isLastTail = (nd.messageId === props.messageId) || (nd.data && nd.data.messageId === props.messageId);
+              }
+              break;
+            } else if (nd && (nd.kind === "assistant" || nd.kind === "bot")) {
+              var mId = (nd.data && nd.data.messageId) || nd.messageId || nd.id;
+              if (props && props.messageId && mId === props.messageId) {
+                isLastTail = true;
+                break;
+              }
+            }
+          }
+        } else {
+          // 兜底：若无 snapshot 判定能力，默认为当前助理操作区
+          isLastTail = true;
+        }
+      } catch (e) { /* ignore */ }
+
+      React.useEffect(function () {
+        if (!sessionId || !isLastTail || typeof fetch !== "function") return;
+        var cancelled = false;
+        var retryTimer = null;
+        function fetchVaultList(attempt) {
+          try {
+            fetch("/bubble/vault/list", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sessionId })
+            }).then(function (r) { return r.json(); }).then(function (data) {
+              if (cancelled) return;
+              if (data && data.ok && data.manifest && Array.isArray(data.manifest.versions)) {
+                if (data.manifest.versions.length >= 2) {
+                  vaultManifestRef.current = data.manifest;
+                  setVaultManifest(data.manifest);
+                } else if (data.manifest.versions.length === 1 && attempt < 3) {
+                  retryTimer = setTimeout(function () { fetchVaultList(attempt + 1); }, 350);
+                }
+              }
+            }).catch(function () {});
+          } catch (e) {}
+        }
+        fetchVaultList(0);
+        return function () {
+          cancelled = true;
+          if (retryTimer !== null) clearTimeout(retryTimer);
+        };
+      }, [sessionId, isLastTail, props && props.messageId]);
+
       // 键盘 ←/→（输入框/可编辑区未聚焦时；实时读家族，避免陈旧闭包）
       React.useEffect(function () {
         function onKey(e) {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           var tgt = e.target;
           if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
+          var vMan = vaultManifestRef.current;
+          if (vMan && Array.isArray(vMan.versions) && vMan.versions.length >= 2) {
+            var vIdx = typeof vMan.currentVersionIndex === "number" ? vMan.currentVersionIndex : vMan.versions.length - 1;
+            if (e.key === "ArrowLeft" && vIdx > 0) { e.preventDefault(); goToVaultVersion(vMan, sessionId, vIdx - 1, props, setVaultManifest, vaultManifestRef); }
+            else if (e.key === "ArrowRight" && vIdx < vMan.versions.length - 1) { e.preventDefault(); goToVaultVersion(vMan, sessionId, vIdx + 1, props, setVaultManifest, vaultManifestRef); }
+            return;
+          }
           var fam = familyOfSession(sessionId, props.ctxSessions);
           if (!fam || fam.versions.length < 2) return;
           var idx = fam.index;
@@ -174,32 +363,26 @@ import { stageOutgoingFiles } from "../bubble/attachments.js";
         }
         window.addEventListener("keydown", onKey, true);
         return function () { window.removeEventListener("keydown", onKey, true); };
-      }, []);
+      }, [sessionId]);
+
       // —— 数据与显示条件（无 hooks，可安全 return null）——
-      var family = familyOfSession(sessionId, props.ctxSessions);
-      if (!family || family.versions.length < 2) return null;
-      // 只挂在**会话最后一个回合**的 TurnTail 上（历史回合的 TurnTail 也渲染本槽，须排除）：
-      // order 最后一项是 turn-tail 且其 data.closing.finalNode.messageId == 本组件的 messageId
-      var isLastTail = false;
-      try {
-        var snapshot = getChatSnapshot(props);
-        if (snapshot && Array.isArray(snapshot.order) && snapshot.nodes && typeof snapshot.nodes.get === "function") {
-          var order = snapshot.order;
-          if (order.length > 0) {
-            var tt = snapshot.nodes.get(order[order.length - 1]);
-            if (tt && tt.kind === "turn-tail" && tt.data && tt.data.closing && tt.data.closing.finalNode) {
-              isLastTail = tt.data.closing.finalNode.messageId === props.messageId;
-            }
-          }
-        }
-      } catch (e) { /* ignore */ }
       if (!isLastTail) return null;
-      var index = family.index;
-      var count = family.versions.length;
+      var useVault = !!(vaultManifest && Array.isArray(vaultManifest.versions) && vaultManifest.versions.length >= 2);
+      var family = useVault ? null : familyOfSession(sessionId, props.ctxSessions);
+      if (!useVault && (!family || family.versions.length < 2)) return null;
+
+      var count = useVault ? vaultManifest.versions.length : family.versions.length;
+      var index = useVault
+        ? (typeof vaultManifest.currentVersionIndex === "number" ? vaultManifest.currentVersionIndex : count - 1)
+        : family.index;
       var atFirst = index <= 0;
       var atLast = index >= count - 1;
       function go(delta) {
-        goToVersion(family, sessionId, index + delta, props, cleanupRef);
+        if (useVault) {
+          goToVaultVersion(vaultManifest, sessionId, index + delta, props, setVaultManifest, vaultManifestRef);
+        } else {
+          goToVersion(family, sessionId, index + delta, props, cleanupRef);
+        }
       }
       var pagerStyle = {
         display: "inline-flex",
@@ -244,4 +427,4 @@ import { stageOutgoingFiles } from "../bubble/attachments.js";
     }
 
 
-export { goToVersion, isFirstUserMessage, resetConversation, VersionPager };
+export { goToVersion, isFirstUserMessage, createBlankChildSession, resetConversation, VersionPager };

@@ -2,11 +2,14 @@ import * as React from "react";
 import { IconCheckOutline, IconChevronLeftOutline, IconChevronRightOutline, ICONS } from "../../core/icons.js";
 import { useUILocaleDict } from "../../core/i18n.js";
 import { log } from "../../core/log.js";
-import { serviceRefs, resolveImageCompat, createDraftImagesCompat, addInputImagesCompat, getInputImageIdsCompat } from "../../core/services.js";
+import { serviceRefs, resolveImageCompat, resolveAttachmentFile, createDraftImagesCompat, addInputImagesCompat, getInputImageIdsCompat, pruneInputImagesCompat, getModelDirectories, isImageFileName, isImageMediaType, guessMimeType } from "../../core/services.js";
 import {
   extractText,
   contentParts,
   renderMessageImagesCompat,
+  renderMessageAttachmentsCompat,
+  FileCardView,
+  renderFileTypeIcon,
   iconImg,
   actionButton,
   pad2,
@@ -17,14 +20,33 @@ import { usePending, readPending, writePending } from "../recall/store.js";
 import { safeOpenSession } from "../recall/safe-session.js";
 import { PendingOriginalImage } from "../recall/image.js";
 import { EditModelPicker } from "./model-picker.js";
-import { editWidthFor, editWidthMode, editWidthCustom } from "./width.js";
+import { editWidthFor, editWidthMode, editWidthCustom, calcBtnRowMinWidth } from "./width.js";
 import { fileToDataUrl, dataUrlToFile } from "./image-utils.js";
 import {
   pendingAttachIds,
   cachedEditMsg,
   latestInputImageIds, setLatestInputImageIds,
-  rebuildDraftAttachments
+  rebuildDraftAttachments,
+  stageOutgoingFiles,
+  stageBottomDraftFiles,
+  extractBottomDraftFiles,
+  stageRecallOriginalFiles,
+  clearRecallOriginalFiles,
+  getDraggedAttachment,
+  clearDraggedAttachment,
+  handleAttachmentDragStart,
+  handleAttachmentDragEnd
 } from "./attachments.js";
+
+function isImageFile(f) {
+  if (!f) return false;
+  var name = f.name || "";
+  var type = f.type || "";
+  if (name && /\.[a-z0-9]+$/i.test(name) && !isImageFileName(name)) {
+    return false;
+  }
+  return isImageMediaType(type) || (type && type.indexOf("image/") === 0) || isImageFileName(name);
+}
 import {
   rewriteOnClick,
   showOriginalImages,
@@ -32,12 +54,13 @@ import {
   recallVisualMode,
   recallConfirmEnabled,
   getChatSnapshot,
-  editOffShowRecall
+  editOffShowRecall,
+  messagePreviewSize
 } from "../../core/constants.js";
 import { setPrimaryButtonSendingState, readCurrentComposerText } from "../recall/buttons.js";
 import { requestCleanGhostQueue } from "../recall/ghost.js";
 import { ConfirmCapsule } from "../recall/capsule.js";
-import { goToVersion, isFirstUserMessage, resetConversation } from "../history/pager.js";
+import { goToVersion, isFirstUserMessage, createBlankChildSession, resetConversation } from "../history/pager.js";
 import { countContentAfter, statOnlyUser } from "../other/helpers.js";
 
     function UserBubbleView(props) {
@@ -45,13 +68,13 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var data = node && node.data ? node.data : {};
       var text = extractText(data.content);
       var L = useUILocaleDict();
-      // review M4：附件检测——图片附件可保留重发（M4 闭环）；其他块无法保留，进入编辑态时提示
+      // review M4：附件检测——图片与文件附件可保留重发；其他块无法保留，进入编辑态时提示
       var hasUnpreservable = false;
       try {
         if (data && Array.isArray(data.content)) {
           for (var bi = 0; bi < data.content.length; bi++) {
             var blk = data.content[bi];
-            if (blk && blk.type !== "text" && blk.type !== "image") { hasUnpreservable = true; break; }
+            if (blk && blk.type !== "text" && blk.type !== "image" && blk.type !== "file") { hasUnpreservable = true; break; }
           }
         }
       } catch (e) { /* ignore */ }
@@ -98,8 +121,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var errState = React.useState(null);
       var opError = errState[0];
       var setOpError = errState[1];
-      var bubbleInitState = React.useState(0); // bubble 档：进入编辑时气泡原宽
-      var bubbleInitW = bubbleInitState[0];
+      var bubbleInitSizeState = React.useState({ w: 0, h: 0 }); // bubble 档：进入编辑时气泡原宽/原高
+      var bubbleInitSize = bubbleInitSizeState[0];
       var isEditPending = pending && pending.type === "edit" && pending.targetKey === myKey;
       var sEditImgs = React.useState([]); // 气泡编辑图片工作集 [{id, url, dataUrl}]
       var editImages = sEditImgs[0];
@@ -112,6 +135,22 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var sEditSel = React.useState(null); // 编辑态模型选择（null=未动 chip → 维持 v2.1.1 捕获语义）
       var editSel = sEditSel[0];
       var setEditSel = sEditSel[1];
+      var sPSize = React.useState(messagePreviewSize());
+      var pSize = sPSize[0];
+      var setPSize = sPSize[1];
+      React.useEffect(function () {
+        function onSettingsChange(e) {
+          if (!e || !e.key || e.key === "dsh-easyrewrite:messagePreviewSize" || (e.detail && e.detail.key === "dsh-easyrewrite:messagePreviewSize")) {
+            setPSize(messagePreviewSize());
+          }
+        }
+        window.addEventListener("storage", onSettingsChange);
+        window.addEventListener("dsh-easyrewrite:settings-change", onSettingsChange);
+        return function () {
+          window.removeEventListener("storage", onSettingsChange);
+          window.removeEventListener("dsh-easyrewrite:settings-change", onSettingsChange);
+        };
+      }, []);
       // 拖入虚线框（dropzone）：dzActive=文件拖拽在窗口内（灰虚线框+毛玻璃浮现）；dzOver=光标悬停在图片预览容器上（变蓝高亮）
       var sDzActive = React.useState(false);
       var dzActive = sDzActive[0];
@@ -127,7 +166,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var dzBottomOverRef = React.useRef(false);
       var dzWatchdogRef = React.useRef(0);   // 拖拽事件流中断兜底（2.5s 无事件自动复位，防卡死）
       var stagedBottomImageIdsRef = React.useRef([]); // 气泡编辑期间拖入底部输入框的暂存图片 ID 列表
-      /** 把当前编辑图片集合同步进 pending（含 dataUrl 字节快照；超限降级只丢字节、引用仍在） */
+      var stagedBottomFilesRef = React.useRef([]);    // 气泡编辑期间拖入底部输入框的暂存 File 实体列表（跨会话保留）
+      /** 把当前编辑图片/文件集合同步进 pending（含 dataUrl 字节快照；超限降级只丢字节、引用仍在） */
       function syncEditImgsToPending(items) {
         try {
           var p = readPending(sessionId);
@@ -136,55 +176,127 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           var snap = items.map(function (it) {
             var du = it && it.dataUrl ? String(it.dataUrl) : null;
             if (du) total += du.length;
-            return { id: it.id, dataUrl: du };
+            return {
+              id: it.id,
+              dataUrl: du,
+              name: it.name || undefined,
+              size: it.size || undefined,
+              type: it.type || undefined,
+              isFile: !!it.isFile,
+              isOriginal: !!(it.attachment && it.attachment.attachmentId)
+            };
           });
           if (total > 4000000) { // localStorage 配额保护：>~4MB 放弃字节持久化（原图仍走 attachRefs 恢复）
             snap = snap.map(function (it) { if (it.dataUrl) { it.dataUrl = null; stripped++; } return it; });
-            log("warn", "edit", "编辑图片过大，跳过刷新持久化（本次会话内仍有效）", { stripped: stripped, total: total });
+            log("warn", "edit", "编辑附件过大，跳过刷新持久化（本次会话内仍有效）", { stripped: stripped, total: total });
           }
-          writePending(sessionId, Object.assign({}, p, { editImgs: snap, updatedAt: Date.now() }));
+          writePending(sessionId, Object.assign({}, p, { editImgs: snap, editImgsTrackedOriginals: true, updatedAt: Date.now() }));
         } catch (eSp) { /* ignore */ }
       }
       React.useEffect(function () {
         if (!isEditPending || editing) return;
         setEditing(true);
         setEditText(pending.draftText);
-        // bug②：刷新/重挂载恢复——原图按 attachRefs 重桥接 + 拖入图按 dataUrl 重建字节。
+        // bug②：刷新/重挂载恢复——原图按 attachRefs 重桥接 + 拖入图/文件按 dataUrl 重建字节。
         // 仅当"挂载时就带着编辑待定"才走恢复（正常点击进入编辑由 enterEdit 自行桥接，避免重复）。
         if (!hadEditPendingAtMount.current || editRestoredRef.current) return;
         editRestoredRef.current = true;
-        (async function () {
-          try {
-            var items = [];
-            var refs = (cachedEditMsg[myKey] && cachedEditMsg[myKey].attachRefs) || [];
-            for (var ri = 0; ri < refs.length; ri++) {
+        try {
+          var _rpc = contentParts(data.content);
+          var _rAtts = _rpc && Array.isArray(_rpc.attachments) ? _rpc.attachments : [];
+          var savedList = (pending && Array.isArray(pending.editImgs)) ? pending.editImgs : [];
+          var trackedOriginals = !!(pending && pending.editImgsTrackedOriginals && Array.isArray(pending.editImgs));
+          var restoreInitItems = [];
+          for (var _ri = 0; _ri < _rAtts.length; _ri++) {
+            var _rEntry = _rAtts[_ri];
+            var _rAtt = _rEntry && _rEntry.attachment;
+            if (!_rAtt) continue;
+            if (trackedOriginals && _rAtt.attachmentId) {
+              var stillKept = savedList.some(function (sv) { return sv && sv.id === _rAtt.attachmentId; });
+              if (!stillKept) continue;
+            }
+            var _rIsFile = _rEntry.type === "file";
+            restoreInitItems.push({
+              id: _rAtt.attachmentId || ((_rIsFile ? "file-" : "img-") + _ri + "-" + Date.now()),
+              name: _rAtt.name || (_rIsFile ? "file" : "image.png"),
+              size: typeof _rAtt.bytes === "number" ? _rAtt.bytes : (_rAtt.size || 0),
+              type: _rAtt.mediaType || (_rIsFile ? "" : "image/png"),
+              url: "",
+              isFile: _rIsFile,
+              file: null,
+              attachment: _rAtt
+            });
+          }
+          for (var si = 0; si < savedList.length; si++) {
+            var sv = savedList[si];
+            if (!sv || !sv.dataUrl || sv.isOriginal) continue;
+            try {
+              var sFile = dataUrlToFile(sv.dataUrl, sv.name);
+              if (sv.isFile) {
+                restoreInitItems.push({
+                  id: sv.id || ("file-restored-" + si + "-" + Date.now()),
+                  name: sv.name || sFile.name || "file",
+                  size: sv.size || sFile.size || 0,
+                  type: sv.type || sFile.type || "",
+                  url: "",
+                  dataUrl: sv.dataUrl,
+                  file: sFile,
+                  isFile: true
+                });
+              } else {
+                var sD = createDraftImagesCompat([sFile], sessionId);
+                if (sD && sD.length > 0) {
+                  restoreInitItems.push({ id: sD[0].id, url: sD[0].previewUrl, dataUrl: sv.dataUrl, file: sFile, isFile: false });
+                } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+                  restoreInitItems.push({ id: sv.id || ("img-restored-" + si), url: URL.createObjectURL(sFile), dataUrl: sv.dataUrl, file: sFile, isFile: false });
+                }
+              }
+            } catch (eRa) { log("warn", "edit", "恢复拖入图/文件失败", { err: String(eRa && eRa.message ? eRa.message : eRa) }); }
+          }
+          if (restoreInitItems.length > 0) {
+            editImagesRef.current = restoreInitItems;
+            setEditImages(restoreInitItems);
+          }
+          (async function () {
+            for (var rbi = 0; rbi < restoreInitItems.length; rbi++) {
+              var rCur = restoreInitItems[rbi];
+              if (rCur.file instanceof File && (rCur.isFile || rCur.url)) continue;
               try {
-                var rUrl = await resolveImageCompat(sessionId, refs[ri], null);
-                if (!rUrl) continue;
-                var rResp = await fetch(rUrl);
-                if (!rResp.ok) continue;
-                var rBlob = await rResp.blob();
-                var rD = createDraftImagesCompat([new File([rBlob], refs[ri].name || "image.png", { type: refs[ri].mediaType || rBlob.type || "image/png" })], sessionId);
-                if (rD && rD.length > 0) items.push({ id: rD[0].id, url: rD[0].previewUrl, dataUrl: null });
-              } catch (eRo) { log("warn", "edit", "恢复原图失败", { err: String(eRo && eRo.message ? eRo.message : eRo) }); }
+                var rResolved = await resolveAttachmentFile(sessionId, rCur, props);
+                var rPreview = rCur.url || "";
+                if (!rCur.isFile) {
+                  if (rResolved instanceof File) {
+                    var rDrafts = createDraftImagesCompat([rResolved], sessionId);
+                    if (rDrafts && rDrafts.length > 0 && rDrafts[0].previewUrl) {
+                      rPreview = rDrafts[0].previewUrl;
+                    } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+                      rPreview = URL.createObjectURL(rResolved);
+                    }
+                  } else if (rCur.attachment) {
+                    var rUrlFallback = await resolveImageCompat(sessionId, rCur.attachment, props);
+                    if (rUrlFallback) rPreview = rUrlFallback;
+                  }
+                }
+                if (rResolved instanceof File || rPreview) {
+                  if (rResolved instanceof File) rCur.file = rResolved;
+                  if (rPreview) rCur.url = rPreview;
+                  setEditImages(function (prev) {
+                    var nxt = prev.map(function (x) {
+                      if (x.id !== rCur.id) return x;
+                      return Object.assign({}, x, {
+                        file: rResolved instanceof File ? rResolved : x.file,
+                        url: rPreview || x.url
+                      });
+                    });
+                    editImagesRef.current = nxt;
+                    return nxt;
+                  });
+                }
+              } catch (eRo) { log("warn", "edit", "恢复单个原附件失败", { err: String(eRo && eRo.message ? eRo.message : eRo) }); }
             }
-            var origCount = items.length;
-            var savedList = (pending && Array.isArray(pending.editImgs)) ? pending.editImgs : [];
-            for (var si = 0; si < savedList.length; si++) {
-              var sv = savedList[si];
-              if (!sv || !sv.dataUrl) continue;
-              try {
-                var sD = createDraftImagesCompat([dataUrlToFile(sv.dataUrl)], sessionId);
-                if (sD && sD.length > 0) items.push({ id: sD[0].id, url: sD[0].previewUrl, dataUrl: sv.dataUrl });
-              } catch (eRa) { log("warn", "edit", "恢复拖入图失败", { err: String(eRa && eRa.message ? eRa.message : eRa) }); }
-            }
-            if (items.length > 0) {
-              setEditImages(items);
-              syncEditImgsToPending(items);
-            }
-            log("info", "edit", "编辑态刷新恢复完成", { orig: origCount, added: items.length - origCount });
-          } catch (eRe) { log("warn", "edit", "编辑态刷新恢复异常", { err: String(eRe && eRe.message ? eRe.message : eRe) }); }
-        })();
+            log("info", "edit", "编辑态刷新恢复完成", { count: restoreInitItems.length });
+          })();
+        } catch (eRe) { log("warn", "edit", "编辑态刷新恢复异常", { err: String(eRe && eRe.message ? eRe.message : eRe) }); }
       }, [isEditPending]);
 
       // 辅助：获取底部输入组件的操作栏/工具栏容器（包含模型选择、发送键等）
@@ -353,7 +465,17 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       React.useEffect(function () {
         if (!editing) return;
         function looksLikeFileDrag(e) {
-          try { var t = e.dataTransfer; return !!(t && t.types && Array.prototype.indexOf.call(t.types, "Files") !== -1); } catch (eT) { return false; }
+          try {
+            var t = e.dataTransfer;
+            if (!t) return false;
+            if (getDraggedAttachment()) return true;
+            if (t.types) {
+              var arr = Array.prototype.slice.call(t.types);
+              if (arr.indexOf("Files") !== -1) return true;
+              if (arr.indexOf("application/x-dsh-easyrewrite-file") !== -1) return true;
+            }
+            return false;
+          } catch (eT) { return false; }
         }
         function suppress(e) { e.preventDefault(); e.stopPropagation(); }
         function armWatchdog() {
@@ -404,49 +526,116 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           } catch (eCl) { /* ignore */ }
           dzReset();
           try {
-            var imgFiles = [];
+            var rawFiles = [];
             var dt = e.dataTransfer;
             if (dt && dt.files) {
               for (var di = 0; di < dt.files.length; di++) {
-                var df = dt.files[di];
-                if (df.type && df.type.indexOf("image") === 0) imgFiles.push(df);
+                if (dt.files[di]) rawFiles.push(dt.files[di]);
               }
             }
-            if (imgFiles.length === 0) return;
+            var dragged = getDraggedAttachment();
+            if (rawFiles.length === 0 && dragged) {
+              if (dragged.file instanceof File) {
+                rawFiles.push(dragged.file);
+              }
+            }
+            if (rawFiles.length === 0) return;
 
             if (isBottom) {
-              // 分流 A：释放到底部输入框暂存区
-              var bImgs = createDraftImagesCompat(imgFiles, sessionId);
-              if (bImgs && bImgs.length > 0) {
-                var bIds = bImgs.map(function (im) { return im.id; });
+              // 分流 A：释放到底部输入框暂存区（通用文件与图片无缝兼容）
+              var ia = props.inputActions;
+              if (ia && typeof ia.addFiles === "function") {
+                try {
+                  ia.addFiles(rawFiles);
+                  log("info", "edit", "文件已通过 ia.addFiles 暂存至官方输入框", { count: rawFiles.length });
+                  clearDraggedAttachment();
+                  return;
+                } catch (eAf) { /* fallthrough */ }
+              }
+              var bDrafts = createDraftImagesCompat(rawFiles, sessionId);
+              if (bDrafts && bDrafts.length > 0) {
+                var bIds = bDrafts.map(function (im) { return im.id; });
                 addInputImagesCompat(props.inputActions, bIds);
                 stagedBottomImageIdsRef.current = stagedBottomImageIdsRef.current.concat(bIds);
-                log("info", "edit", "图片已添加到底部输入框暂存区", { count: bIds.length, ids: bIds });
+                stagedBottomFilesRef.current = stagedBottomFilesRef.current.concat(rawFiles);
+                log("info", "edit", "文件/图片已成功添加到底部输入框暂存区", { count: bIds.length, ids: bIds });
               }
+              clearDraggedAttachment();
               return;
             }
 
-            if (!isBubble) return;
-
-            // 分流 B：释放到气泡编辑区（修改当前消息）
-            var dImgs = createDraftImagesCompat(imgFiles, sessionId);
-            var addedItems = dImgs.map(function (im) { return { id: im.id, url: im.previewUrl, dataUrl: null }; });
-            // 异步补 dataUrl 字节快照（bug② 刷新后可重建）
-            for (var ai = 0; ai < addedItems.length; ai++) {
-              (function (item, srcFile) {
-                fileToDataUrl(srcFile).then(function (du) {
-                  item.dataUrl = du;
-                  setEditImages(function (prev) {
-                    var nxt = prev.map(function (x) { return x.id === item.id ? Object.assign({}, x, { dataUrl: du }) : x; });
-                    syncEditImgsToPending(nxt);
-                    return nxt;
-                  });
-                }).catch(function () { /* ignore */ });
-              })(addedItems[ai], imgFiles[ai]);
+            if (!isBubble) {
+              clearDraggedAttachment();
+              return;
             }
-            setEditImages(function (prev) { var nxt = prev.concat(addedItems); syncEditImgsToPending(nxt); return nxt; });
-            log("info", "edit", "拦截到拖入图片至气泡", { count: addedItems.length });
-          } catch (eDr) { log("warn", "edit", "拖入拦截异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); }
+
+            // 分流 B：释放到气泡编辑区（修改当前消息，同时接纳图片和通用文件）
+            if (dragged && dragged.id && editImagesRef.current.some(function (x) { return x.id === dragged.id; })) {
+              clearDraggedAttachment();
+              return;
+            }
+            var imgFiles = [];
+            var nonImgFiles = [];
+            for (var fi = 0; fi < rawFiles.length; fi++) {
+              var rf = rawFiles[fi];
+              if (isImageFile(rf)) imgFiles.push(rf);
+              else nonImgFiles.push(rf);
+            }
+
+            var addedItems = [];
+            if (imgFiles.length > 0) {
+              var dImgs = createDraftImagesCompat(imgFiles, sessionId);
+              var imgItems = dImgs.map(function (im, idx) { return { id: im.id, url: im.previewUrl, dataUrl: null, file: imgFiles[idx] }; });
+              // 异步补 dataUrl 字节快照（bug② 刷新后可重建）
+              for (var ai = 0; ai < imgItems.length; ai++) {
+                (function (item, srcFile) {
+                  fileToDataUrl(srcFile).then(function (du) {
+                    item.dataUrl = du;
+                    setEditImages(function (prev) {
+                      var nxt = prev.map(function (x) { return x.id === item.id ? Object.assign({}, x, { dataUrl: du }) : x; });
+                      syncEditImgsToPending(nxt);
+                      return nxt;
+                    });
+                  }).catch(function () { /* ignore */ });
+                })(imgItems[ai], imgFiles[ai]);
+              }
+              addedItems = addedItems.concat(imgItems);
+            }
+
+            if (nonImgFiles.length > 0) {
+              var fileItems = nonImgFiles.map(function (nf) {
+                return {
+                  id: "file-" + Math.random().toString(36).slice(2) + "-" + Date.now(),
+                  name: nf.name || "file",
+                  size: nf.size || 0,
+                  type: nf.type || "",
+                  dataUrl: null,
+                  isFile: true,
+                  file: nf
+                };
+              });
+              for (var nfi = 0; nfi < fileItems.length; nfi++) {
+                (function (fItem, srcNf) {
+                  if (srcNf && srcNf.size <= 2500000) {
+                    fileToDataUrl(srcNf).then(function (du) {
+                      fItem.dataUrl = du;
+                      setEditImages(function (prev) {
+                        var nxt = prev.map(function (x) { return x.id === fItem.id ? Object.assign({}, x, { dataUrl: du }) : x; });
+                        editImagesRef.current = nxt;
+                        syncEditImgsToPending(nxt);
+                        return nxt;
+                      });
+                    }).catch(function () { /* ignore */ });
+                  }
+                })(fileItems[nfi], nonImgFiles[nfi]);
+              }
+              addedItems = addedItems.concat(fileItems);
+            }
+
+            setEditImages(function (prev) { var nxt = prev.concat(addedItems); editImagesRef.current = nxt; syncEditImgsToPending(nxt); return nxt; });
+            log("info", "edit", "拦截到拖入文件至气泡", { imgs: imgFiles.length, files: nonImgFiles.length, total: addedItems.length });
+            clearDraggedAttachment();
+          } catch (eDr) { log("warn", "edit", "拖入拦截异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); clearDraggedAttachment(); }
         }
         function onDragLeave(e) {
           // 离开窗口（relatedTarget=null）→ 整体复位；跨元素边界的假离开交给 dragover 刷新
@@ -486,14 +675,22 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
         };
       }, [editing]);
 
-      // 渲染时无条件缓存消息图片 refs（confirmEdit 异步回调安全读取）
+      // 渲染时无条件缓存消息图片与文件 refs（confirmEdit / 撤回 异步回调安全读取）
       var _pcCache = contentParts(data.content);
-      var _imgsCache = _pcCache && _pcCache.images ? _pcCache.images : [];
-      if (_imgsCache.length > 0) {
+      var _attsCache = _pcCache && _pcCache.attachments ? _pcCache.attachments : [];
+      if (_attsCache.length > 0) {
         var _arC = [];
-        for (var _aci = 0; _aci < _imgsCache.length; _aci++) {
-          var _ca2 = _imgsCache[_aci].attachment;
-          if (_ca2 && typeof _ca2.attachmentId === "string") _arC.push({ attachmentId: _ca2.attachmentId, mediaType: _ca2.mediaType, name: _ca2.name });
+        for (var _aci = 0; _aci < _attsCache.length; _aci++) {
+          var _itemC = _attsCache[_aci];
+          var _ca2 = _itemC && _itemC.attachment;
+          if (_ca2 && typeof _ca2.attachmentId === "string") {
+            _arC.push({
+              attachmentId: _ca2.attachmentId,
+              mediaType: _ca2.mediaType || "",
+              name: _ca2.name || (_itemC.type === "file" ? "file" : "image.png"),
+              isFile: _itemC.type === "file"
+            });
+          }
         }
         if (_arC.length > 0) cachedEditMsg[myKey] = { seq: (data && typeof data.seq === "number") ? data.seq : anchorSeq, attachRefs: _arC };
       }
@@ -621,45 +818,80 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       }
 
       // ---------- 编辑态（气泡 rewrite） ----------
-      function enterEdit(initWidth) {
+      function enterEdit(initWidth, initHeight) {
         if (pending) { log("warn", "edit", "已有待处理操作（单待定约束），请先处理"); return; }
         var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
         writePending(sessionId, { type: "edit", targetKey: myKey, targetSeq: realSeq, draftText: text, updatedAt: Date.now() });
-        if (initWidth && initWidth > 0) bubbleInitState[1](initWidth);
+        bubbleInitSizeState[1]({ w: initWidth && initWidth > 0 ? initWidth : 0, h: initHeight && initHeight > 0 ? initHeight : 0 });
         setEditing(true);
         setEditText(text);
         setEditSel(null);
-        setEditImages([]); // v2.4.0：每次进入编辑=干净起点（防反复进出叠加）
         stagedBottomImageIdsRef.current = []; // 暂存列表重置
-        log("info", "edit", "进入编辑态", { sessionId: sessionId, targetSeq: realSeq, initW: initWidth });
-        // 带图编辑：把原消息图片桥接成 draft attachments（供编辑态预览和确认发送）
+        stagedBottomFilesRef.current = [];
+        log("info", "edit", "进入编辑态", { sessionId: sessionId, targetSeq: realSeq, initW: initWidth, initH: initHeight });
+        // 同步按原消息顺序构建附件工作集（杜绝图片异步后置导致顺序颠倒，且确保点击“确定”零延迟可读）
         try {
-          var _er = [];
           var _epc = contentParts(data.content);
-          if (_epc.images && _epc.images.length > 0) {
-            for (var _ei = 0; _ei < _epc.images.length; _ei++) {
-              var _ea = _epc.images[_ei].attachment;
-              if (_ea && typeof _ea.attachmentId === "string") _er.push({ attachmentId: _ea.attachmentId, mediaType: _ea.mediaType, name: _ea.name });
-            }
+          var _rawAtts = _epc && Array.isArray(_epc.attachments) ? _epc.attachments : [];
+          var initialItems = [];
+          for (var _ai = 0; _ai < _rawAtts.length; _ai++) {
+            var _entry = _rawAtts[_ai];
+            var _att = _entry && _entry.attachment;
+            if (!_att) continue;
+            var _isFile = _entry.type === "file" || (_att && !isImageFileName(_att.name));
+            initialItems.push({
+              id: _att.attachmentId || ((_isFile ? "file-" : "img-") + _ai + "-" + Date.now()),
+              name: _att.name || (_isFile ? "file" : "image.png"),
+              size: typeof _att.bytes === "number" ? _att.bytes : (_att.size || 0),
+              type: _att.mediaType || (_isFile ? guessMimeType(_att.name) : "image/png"),
+              url: "",
+              isFile: _isFile,
+              file: null,
+              attachment: _att
+            });
           }
-          if (_er.length > 0) {
-            (async function() {
-              try {
-                var eFiles = [];
-                for (var ei2 = 0; ei2 < _er.length; ei2++) {
-                  var eUrl = await resolveImageCompat(sessionId, _er[ei2], props);
-                  if (!eUrl) continue;
-                  var eResp = await fetch(eUrl); if (!eResp.ok) continue;
-                  var eBlob = await eResp.blob();
-                  eFiles.push(new File([eBlob], _er[ei2].name || "image.png", { type: _er[ei2].mediaType || eBlob.type || "image/png" }));
+          editImagesRef.current = initialItems;
+          setEditImages(initialItems);
+          if (initialItems.length > 0) {
+            log("info", "edit", "enterEdit 附件工作集已同步就绪", { count: initialItems.length });
+            (async function () {
+              for (var bi2 = 0; bi2 < initialItems.length; bi2++) {
+                var curItem = initialItems[bi2];
+                try {
+                  var resolvedFile = await resolveAttachmentFile(sessionId, curItem, props);
+                  var previewUrl = curItem.url || "";
+                  if (!curItem.isFile) {
+                    if (resolvedFile instanceof File) {
+                      var dList = createDraftImagesCompat([resolvedFile], sessionId);
+                      if (dList && dList.length > 0 && dList[0].previewUrl) {
+                        previewUrl = dList[0].previewUrl;
+                      } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
+                        previewUrl = URL.createObjectURL(resolvedFile);
+                      }
+                    } else {
+                      var fallbackUrl = await resolveImageCompat(sessionId, curItem.attachment, props);
+                      if (fallbackUrl) previewUrl = fallbackUrl;
+                    }
+                  }
+                  if (resolvedFile instanceof File || previewUrl) {
+                    if (resolvedFile instanceof File) curItem.file = resolvedFile;
+                    if (previewUrl) curItem.url = previewUrl;
+                    setEditImages(function (prev) {
+                      var nxt = prev.map(function (x) {
+                        if (x.id !== curItem.id) return x;
+                        return Object.assign({}, x, {
+                          file: resolvedFile instanceof File ? resolvedFile : x.file,
+                          url: previewUrl || x.url
+                        });
+                      });
+                      editImagesRef.current = nxt;
+                      return nxt;
+                    });
+                  }
+                } catch (eBr) {
+                  log("warn", "edit", "enterEdit 单个附件解析异常", { id: curItem.id, err: String(eBr && eBr.message ? eBr.message : eBr) });
                 }
-                if (eFiles.length > 0) {
-                  var eDrafts = createDraftImagesCompat(eFiles, sessionId);
-                  var newItems = eDrafts.map(function(im) { return { id: im.id, url: im.previewUrl }; });
-                  setEditImages(function(prev) { return prev.concat(newItems); });
-                  log("info", "edit", "enterEdit 图片桥接完成", { count: newItems.length });
-                }
-              } catch (eBe) { log("warn", "edit", "enterEdit 图片桥接异常", { err: String(eBe && eBe.message ? eBe.message : eBe) }); }
+              }
             })();
           }
         } catch (eEe) { /* ignore */ }
@@ -679,16 +911,13 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           var newText = editText;
           var sid = sessionId;
           var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
-          // v2.4.0：首条/截断场景交由宿主判定树（下方 no-boundary/turn-open 分支统一走 resetConversation），
-          // 窗口化快照上的 isFirstUserMessage 本地判定已移除（误判源）。图片桥接随命中分支执行。
-          // review M3：pending 不清除前置——失败时保留草稿并恢复编辑态
-          // M4：收集本条消息的图片附件引用（随 resume 数据传递，重发保留）
-          // 诊断：dump content 块类型
-          var editImgIds = editImages.map(function(x) { return x.id; });
+          // 读取最新的附件工作集引用（避免闭包陈旧值导致直接点确定时漏掉附件）
+          var activeEditItems = (editImagesRef.current && editImagesRef.current.length > 0) ? editImagesRef.current.slice() : editImages.slice();
+          var editImgIds = activeEditItems.map(function(x) { return x.id; });
           // v2.2：编辑态模型 chip 的本地选择优先；未动 chip → 维持 v2.1.1 捕获（输入框当前值）
           var msel = editSel || (props.modelSel ? props.modelSel.capture(sid) : null);
 
-          // 收集底部输入框暂存草稿（文本与图片）：新会话中隔离保留
+          // 收集底部输入框暂存草稿（文本与图片/通用文档）：新会话中隔离保留
           var bDraftText = "";
           try { bDraftText = readCurrentComposerText(""); } catch (eBT) { /* ignore */ }
           var bImgIds = [];
@@ -698,9 +927,16 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           if (bImgIds.length === 0 && stagedBottomImageIdsRef.current.length > 0) {
             bImgIds = stagedBottomImageIdsRef.current.slice();
           }
-          var stagedDraftPayload = (bDraftText || (bImgIds && bImgIds.length > 0)) ? {
+          var bottomFiles = [];
+          try {
+            bottomFiles = await extractBottomDraftFiles(sid, bImgIds, props, stagedBottomFilesRef.current);
+          } catch (eExBf) {
+            log("warn", "edit", "提取底部草稿文件异常", { err: String(eExBf && eExBf.message ? eExBf.message : eExBf) });
+          }
+          var stagedDraftPayload = (bDraftText || (bottomFiles && bottomFiles.length > 0) || (bImgIds && bImgIds.length > 0)) ? {
             text: bDraftText,
-            imageIds: bImgIds
+            imageIds: bImgIds,
+            hasFiles: bottomFiles.length > 0
           } : null;
 
           setEditing(false);
@@ -711,52 +947,115 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             body: JSON.stringify({ sessionId: sid, targetSeq: realSeq })
           });
           var data = await resp.json();
+          var isNoBoundaryEdit = false;
           if (!data || !data.ok) {
             var errCode2 = (data && data.error) || "unknown";
-            log("warn", "edit", "编辑重发失败（边界）", { error: errCode2 });
-            setPrimaryButtonSendingState(false);
-            if (errCode2 === "turn-open" || errCode2 === "no-boundary") {
-              // 极限场景（说一半截断 / 首条无边界）：重置对话，编辑文本带到新起点
-              setEditing(false);
-              setOpError(L.resetNotice);
+            log("warn", "edit", "编辑重发边界返回非普通分支", { error: errCode2 });
+            if (errCode2 === "no-boundary") {
+              isNoBoundaryEdit = true;
+            } else if (errCode2 === "turn-open") {
+              setPrimaryButtonSendingState(false);
+              setEditing(true);
+              setOpError(L.turnOpenNotice || L.errGeneric);
               setTimeout(function () { setOpError(null); }, 5000);
-              resetConversation(sid, "edit", newText, props, editImgIds, editSel, stagedDraftPayload);
+              return;
             } else {
               // review M3：失败恢复编辑态（草稿仍在 editText），不丢内容；显示可见原因
+              setPrimaryButtonSendingState(false);
               setEditing(true);
               setOpError(L.errGeneric);
               setTimeout(function () { setOpError(null); }, 5000);
+              return;
             }
-            return;
           }
-          var newId = null;
+          // 影子仓储预保存：在截断/创建新版本前将当前完整会话备份为快照
           try {
-            newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
-          } catch (e) {
-            log("error", "edit", "fork 失败（编辑重发中止）", { err: String(e && e.message ? e.message : e) });
-            setPrimaryButtonSendingState(false);
-            setEditing(true); // 恢复编辑态
-            return;
+            fetch("/bubble/vault/save", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sid, summary: "编辑重发前完整快照" }),
+              keepalive: true
+            }).catch(function () {});
+          } catch (eVs) {}
+          var newId = null;
+          if (isNoBoundaryEdit) {
+            newId = await createBlankChildSession(sid, props);
+            if (!newId) {
+              log("error", "edit", "首条消息创建空白新会话失败（编辑重发中止）");
+              setPrimaryButtonSendingState(false);
+              setEditing(true);
+              setOpError(L.errGeneric);
+              setTimeout(function () { setOpError(null); }, 5000);
+              return;
+            }
+          } else {
+            try {
+              newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: data.boundary });
+            } catch (e) {
+              var emEdit = String(e && e.message ? e.message : e);
+              log("error", "edit", "fork 失败", { err: emEdit });
+              if (/has no completed turn to fork from/i.test(emEdit)) {
+                newId = await createBlankChildSession(sid, props);
+                if (!newId) {
+                  setPrimaryButtonSendingState(false);
+                  setEditing(true);
+                  setOpError(L.errGeneric);
+                  setTimeout(function () { setOpError(null); }, 5000);
+                  return;
+                }
+              } else {
+                setPrimaryButtonSendingState(false);
+                setEditing(true); // 恢复编辑态
+                setOpError(/has not completed the turn/i.test(emEdit) ? (L.turnOpenNotice || L.errGeneric) : L.errGeneric);
+                setTimeout(function () { setOpError(null); }, 5000);
+                return;
+              }
+            }
           }
           // Issue #10 根治防御：fork 成功返回即请求 Host 端物理拔除继承的幽灵旧消息
           await requestCleanGhostQueue(newId);
-          // review M6：resume-send 带 TTL 时间戳；M4：图片附件引用随行（重发保留）；stagedDraft：新会话草稿隔离保留
+          // review M6：resume-send 带 TTL 时间戳；M4：图片与文件附件引用随行（重发保留）；stagedDraft：新会话草稿隔离保留
+          var editAttachRefs = [];
+          try {
+            var outgoingFiles = [];
+            for (var ofi = 0; ofi < activeEditItems.length; ofi++) {
+              var it = activeEditItems[ofi];
+              if (!it) continue;
+              if (it.attachment && typeof it.attachment.attachmentId === "string") {
+                editAttachRefs.push({
+                  attachmentId: it.attachment.attachmentId,
+                  mediaType: it.attachment.mediaType || it.type || "",
+                  name: it.attachment.name || it.name || (it.isFile ? "file" : "image.png"),
+                  isFile: !!it.isFile
+                });
+              }
+              if (it.file instanceof File) {
+                outgoingFiles.push(it.file);
+              } else {
+                try {
+                  var fallbackFile = await resolveAttachmentFile(sid, it, props);
+                  if (fallbackFile && fallbackFile instanceof File) {
+                    it.file = fallbackFile;
+                    outgoingFiles.push(fallbackFile);
+                  }
+                } catch (eFf) { /* ignore */ }
+              }
+            }
+            if (outgoingFiles.length > 0) stageOutgoingFiles(newId, outgoingFiles);
+          } catch (eOf) { /* ignore */ }
+          if (bottomFiles && bottomFiles.length > 0) {
+            stageBottomDraftFiles(newId, bottomFiles);
+          }
           try {
             localStorage.setItem("dsh-easyrewrite:resume-send:" + newId, JSON.stringify({
               draftText: newText,
               t: Date.now(),
               imageIds: editImgIds,
+              attachRefs: editAttachRefs,
               sel: msel,
               stagedDraft: stagedDraftPayload
             }));
           } catch (e) { /* ignore */ }
-          try {
-            if (props.ctxWorkspaces && typeof props.ctxWorkspaces.archiveSession === "function") {
-              // review M8：await + catch
-              await Promise.resolve(props.ctxWorkspaces.archiveSession(sid)).catch(function () { /* ignore */ });
-            }
-          } catch (e) { log("warn", "edit", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
-          log("info", "edit", "编辑重发：归档原会话 + 打开新会话", { newId: newId });
 
           var opened2 = safeOpenSession(newId, props);
           if (!opened2) {
@@ -767,6 +1066,15 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             setOpError(L.errGeneric);
             return;
           }
+          try {
+            fetch("/bubble/vault/retire-session", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sid, replacementSessionId: newId }),
+              keepalive: true
+            }).catch(function () {});
+          } catch (eRet) { log("warn", "edit", "移入影子仓储失败", { err: String(eRet && eRet.message ? eRet : eRet) }); }
+          log("info", "edit", "编辑重发：打开新会话 + 原会话移入影子仓储", { newId: newId });
           // 成功打开新会话后再清除 pending
           if (isEditPending) writePending(sid, null);
         } catch (err) {
@@ -783,7 +1091,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
         var sel = window.getSelection && window.getSelection();
         if (sel && typeof sel.toString === "function" && sel.toString().length > 0) return; // 有选区不进入
         if (e.target && typeof e.target.closest === "function" && e.target.closest("a")) return; // 点链接不进入
-        enterEdit(e.currentTarget ? e.currentTarget.offsetWidth : 0);
+        var el = e.currentTarget;
+        enterEdit(el ? el.offsetWidth : 0, el ? el.offsetHeight : 0);
       }
       if (editing) {
         var editMode = editWidthMode();
@@ -796,12 +1105,14 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             document.head.appendChild(dzSt);
           }
         } catch (eDzSt) { /* ignore */ }
-        var editBoxW = editWidthFor(editMode, editText, bubbleInitW);
+        var safetyW = calcBtnRowMinWidth(L.cancel, L.confirm);
+        var editBoxW = editWidthFor(editMode, editText, bubbleInitSize.w, safetyW);
         var lineCount = (editText.match(/\n/g) || []).length + 1;
-        var taRows = Math.max(1, Math.min(20, lineCount));
+        var taRows = Math.max(1, Math.min(100, lineCount));
         var editBoxStyle = {
           width: "100%",
           maxWidth: editBoxW,
+          minHeight: bubbleInitSize.h > 0 ? bubbleInitSize.h + "px" : undefined,
           boxSizing: "border-box",
           position: "relative",
           background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.12))",
@@ -809,10 +1120,12 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           padding: "8px 14px",
           display: "flex",
           flexDirection: "column",
+          justifyContent: "space-between",
           gap: "6px"
         };
         var taStyle = {
           width: "100%",
+          flex: "1 1 auto",
           border: "none",
           outline: "none",
           background: "transparent",
@@ -823,8 +1136,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           color: "var(--dsw-alias-label-primary)",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
-          
-          maxHeight: "240px",
+          maxHeight: "70vh",
           overflowY: "auto"
         };
         var btnRowStyle = { display: "flex", justifyContent: "flex-end", gap: "8px" };
@@ -859,19 +1171,53 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
               e.preventDefault(); e.stopPropagation();
               try {
                 var dt = e.dataTransfer;
-                if (!dt || !dt.files) return;
-                var imgFiles = [];
-                for (var di = 0; di < dt.files.length; di++) {
-                  var df = dt.files[di];
-                  if (df.type && df.type.indexOf("image") === 0) imgFiles.push(df);
+                var rawFiles = [];
+                if (dt && dt.files) {
+                  for (var di = 0; di < dt.files.length; di++) {
+                    if (dt.files[di]) rawFiles.push(dt.files[di]);
+                  }
                 }
+                var dragged = getDraggedAttachment();
+                if (rawFiles.length === 0 && dragged) {
+                  if (dragged.file instanceof File) rawFiles.push(dragged.file);
+                }
+                if (rawFiles.length === 0) return;
+                if (dragged && dragged.id && editImagesRef.current.some(function(x) { return x.id === dragged.id; })) {
+                  return;
+                }
+                var imgFiles = [];
+                var nonImgFiles = [];
+                for (var fi = 0; fi < rawFiles.length; fi++) {
+                  var df = rawFiles[fi];
+                  if (isImageFile(df)) imgFiles.push(df);
+                  else nonImgFiles.push(df);
+                }
+                var addedItems = [];
                 if (imgFiles.length > 0) {
                   var dImgs = createDraftImagesCompat(imgFiles, sessionId);
-                  var newItems = dImgs.map(function(im) { return { id: im.id, url: im.previewUrl }; });
-                  setEditImages(function(prev) { return prev.concat(newItems); });
-                  log("info", "edit", "拖入图片已加入编辑", { count: newItems.length });
+                  var newImgs = dImgs.map(function(im, idx) { return { id: im.id, url: im.previewUrl, file: imgFiles[idx] }; });
+                  addedItems = addedItems.concat(newImgs);
                 }
-              } catch (eDr) { log("warn", "edit", "拖入处理异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); }
+                if (nonImgFiles.length > 0) {
+                  var newFiles = nonImgFiles.map(function(nf) {
+                    return {
+                      id: "file-" + Math.random().toString(36).slice(2) + "-" + Date.now(),
+                      name: nf.name || "file",
+                      size: nf.size || 0,
+                      type: nf.type || guessMimeType(nf.name),
+                      dataUrl: null,
+                      isFile: true,
+                      file: nf
+                    };
+                  });
+                  addedItems = addedItems.concat(newFiles);
+                }
+                if (addedItems.length > 0) {
+                  setEditImages(function(prev) { var nxt = prev.concat(addedItems); editImagesRef.current = nxt; syncEditImgsToPending(nxt); return nxt; });
+                  log("info", "edit", "拖入附件已加入编辑", { count: addedItems.length });
+                }
+                clearDraggedAttachment();
+              } catch (eDr) { log("warn", "edit", "拖入处理异常", { err: String(eDr && eDr.message ? eDr.message : eDr) }); clearDraggedAttachment(); }
             },
             onDragOver: function (e) { e.preventDefault(); e.stopPropagation(); }
           },
@@ -912,10 +1258,109 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
               }
             },
             editImages.map(function(ei, eiIdx) {
+              if (ei.isFile) {
+                return React.createElement("div", {
+                  key: ei.id,
+                  draggable: true,
+                  "data-easyrewrite-file-card": "1",
+                  style: {
+                    position: "relative",
+                    boxSizing: "border-box",
+                    width: thumbSize + "px", height: thumbSize + "px",
+                    borderRadius: "8px",
+                    border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))",
+                    background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08))",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "6px 4px",
+                    gap: "4px",
+                    textAlign: "center",
+                    overflow: "hidden",
+                    transition: "width .15s ease, height .15s ease",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    MozUserSelect: "none",
+                    cursor: "grab"
+                  },
+                  title: ei.name || "文件",
+                  onDragStart: function (e) {
+                    handleAttachmentDragStart(e, ei, sessionId, props);
+                  },
+                  onDragEnd: function (e) {
+                    handleAttachmentDragEnd(e);
+                  }
+                },
+                  React.createElement("div", { style: { flex: "none", width: "28px", height: "28px", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" } },
+                    renderFileTypeIcon(ei.name, 28)
+                  ),
+                  React.createElement("span", {
+                    style: {
+                      width: "100%",
+                      maxWidth: "100%",
+                      whiteSpace: "nowrap",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                      fontSize: "11px",
+                      lineHeight: "14px",
+                      fontWeight: 500,
+                      color: "var(--dsw-alias-label-primary)",
+                      textAlign: "center",
+                      padding: "0 2px",
+                      userSelect: "none",
+                      pointerEvents: "none"
+                    }
+                  }, ei.name || "file"),
+                  React.createElement("button", {
+                    type: "button",
+                    onClick: function (ev) {
+                      ev.stopPropagation();
+                      var nxtRm = editImagesRef.current.filter(function (x) { return x.id !== ei.id; });
+                      editImagesRef.current = nxtRm;
+                      setEditImages(nxtRm);
+                      syncEditImgsToPending(nxtRm);
+                    },
+                    style: {
+                      position: "absolute", top: "2px", right: "2px", width: "18px", height: "18px",
+                      borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)",
+                      color: "#fff", fontSize: "12px", lineHeight: "18px", textAlign: "center",
+                      cursor: "pointer", padding: "0"
+                    },
+                    title: "移除文件"
+                  }, "\u00d7")
+                );
+              }
               // boxSizing:border-box：1px 边框计入 thumbSize（content-box 下每张多占 2px，会挤走第 4 张——已踩坑）
-              return React.createElement("div", { key: ei.id, style: { position: "relative", boxSizing: "border-box", width: thumbSize + "px", height: thumbSize + "px", borderRadius: "8px", overflow: "hidden", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))", transition: "width .15s ease, height .15s ease" } },
-                React.createElement("img", { src: ei.url, style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
-                React.createElement("button", { type: "button", onClick: function(ev) { ev.stopPropagation(); var nxtRm = editImagesRef.current.filter(function(x) { return x.id !== ei.id; }); setEditImages(nxtRm); syncEditImgsToPending(nxtRm); }, style: { position: "absolute", top: "2px", right: "2px", width: "18px", height: "18px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: "12px", lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: "0" }, title: "移除图片" }, "\u00d7")
+              return React.createElement("div", {
+                key: ei.id,
+                draggable: true,
+                "data-easyrewrite-img-card": "1",
+                style: {
+                  position: "relative",
+                  boxSizing: "border-box",
+                  width: thumbSize + "px",
+                  height: thumbSize + "px",
+                  borderRadius: "8px",
+                  overflow: "hidden",
+                  border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.2))",
+                  transition: "width .15s ease, height .15s ease",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  MozUserSelect: "none",
+                  cursor: "grab"
+                },
+                onDragStart: function (e) {
+                  handleAttachmentDragStart(e, ei, sessionId, props);
+                },
+                onDragEnd: function (e) {
+                  handleAttachmentDragEnd(e);
+                }
+              },
+                ei.url
+                  ? React.createElement("img", { src: ei.url, draggable: false, style: { width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" } })
+                  : React.createElement("div", { style: { width: "100%", height: "100%", background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.08))" } }),
+                React.createElement("button", { type: "button", onClick: function(ev) { ev.stopPropagation(); var nxtRm = editImagesRef.current.filter(function(x) { return x.id !== ei.id; }); editImagesRef.current = nxtRm; setEditImages(nxtRm); syncEditImgsToPending(nxtRm); }, style: { position: "absolute", top: "2px", right: "2px", width: "18px", height: "18px", borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: "12px", lineHeight: "18px", textAlign: "center", cursor: "pointer", padding: "0" }, title: "移除图片" }, "\u00d7")
               );
             }),
             dzShow ? React.createElement(
@@ -946,6 +1391,13 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             hasUnpreservable ? React.createElement("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-warning, #b7791f)", marginBottom: "6px", lineHeight: "1.5" } }, L.attachWarning) : null,
             opError ? React.createElement("div", { style: { fontSize: "12px", color: "var(--dsw-alias-label-error, #d9534f)", marginBottom: "6px", lineHeight: "1.5" } }, opError) : null,
             React.createElement("textarea", {
+              ref: function (taEl) {
+                if (taEl && !taEl.__autoHeightDone) {
+                  taEl.__autoHeightDone = true;
+                  taEl.style.height = "auto";
+                  taEl.style.height = Math.max(taEl.scrollHeight, 24) + "px";
+                }
+              },
               value: editText,
               rows: taRows,
               autoFocus: true,
@@ -959,26 +1411,33 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
               onPaste: function (e) {
                 try {
                   var items = e.clipboardData ? e.clipboardData.items : [];
+                  var imgFiles = [];
                   for (var pi = 0; pi < items.length; pi++) {
                     if (items[pi].type && items[pi].type.indexOf("image") === 0) {
                       var pf = items[pi].getAsFile();
-                      if (pf) {
-                        e.preventDefault();
-                        var pImgs = createDraftImagesCompat([pf], sessionId);
-                        if (pImgs && pImgs.length > 0) {
-                          var pItem = { id: pImgs[0].id, url: pImgs[0].previewUrl, dataUrl: null };
-                          setEditImages(function(prev) { var nxt = prev.concat([pItem]); syncEditImgsToPending(nxt); return nxt; });
-                          fileToDataUrl(pf).then(function (du) {
-                            pItem.dataUrl = du;
+                      if (pf) imgFiles.push(pf);
+                    }
+                  }
+                  if (imgFiles.length > 0) {
+                    e.preventDefault();
+                    var pImgs = createDraftImagesCompat(imgFiles, sessionId);
+                    if (pImgs && pImgs.length > 0) {
+                      var newItems = pImgs.map(function(im, idx) { return { id: im.id, url: im.previewUrl, dataUrl: null, file: imgFiles[idx] }; });
+                      setEditImages(function(prev) { var nxt = prev.concat(newItems); editImagesRef.current = nxt; syncEditImgsToPending(nxt); return nxt; });
+                      imgFiles.forEach(function (f, fIdx) {
+                        var targetItem = newItems[fIdx];
+                        if (targetItem) {
+                          fileToDataUrl(f).then(function (du) {
+                            targetItem.dataUrl = du;
                             setEditImages(function (prev2) {
-                              var nxt2 = prev2.map(function (x) { return x.id === pItem.id ? Object.assign({}, x, { dataUrl: du }) : x; });
+                              var nxt2 = prev2.map(function (x) { return x.id === targetItem.id ? Object.assign({}, x, { dataUrl: du }) : x; });
+                              editImagesRef.current = nxt2;
                               syncEditImgsToPending(nxt2);
                               return nxt2;
                             });
                           }).catch(function () { /* ignore */ });
                         }
-                        break;
-                      }
+                      });
                     }
                   }
                 } catch (pe) { /* ignore */ }
@@ -986,7 +1445,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             }),
             React.createElement(
               "div", { style: btnRowStyle },
-              props.modelDirectories ? React.createElement(EditModelPicker, { sessionId: sessionId, modelDirectories: props.modelDirectories, selection: editSel, onChange: setEditSel }) : null,
+              (props.modelDirectories || getModelDirectories()) ? React.createElement(EditModelPicker, { sessionId: sessionId, modelDirectories: props.modelDirectories || getModelDirectories(), selection: editSel, onChange: setEditSel }) : null,
               React.createElement(
                 "div", { style: { display: "flex", gap: "8px", marginLeft: "auto" } },
                 React.createElement("button", { type: "button", style: ghostBtnStyle, onClick: function (e) { e.stopPropagation(); cancelEdit(); } }, L.cancel),
@@ -1018,60 +1477,91 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
         paddingRight: "4px"
       };
 
-      // 问题1 修复：气泡上方渲染消息中的图片附件（覆盖 chat.node 后官方图片槽不再自动注入）
+      // 气泡上方渲染消息中的图片与文件附件（覆盖 chat.node 后官方附件槽不再自动注入）
       var pc = contentParts(data.content);
       var msgImages = pc && pc.images ? pc.images : [];
+      var msgFiles = pc && pc.files ? pc.files : [];
+      var hasTextContent = typeof text === "string" && text.trim().length > 0;
+      var hasAttachments = msgImages.length > 0 || msgFiles.length > 0;
+      var shouldRenderBubble = hasTextContent || !hasAttachments;
 
       return React.createElement(
-        "div", { style: rowStyle, "data-dsh-easyrewrite": "user", "data-time-hover-root": true },
-        renderMessageImagesCompat(msgImages, props),
-        React.createElement(
+        "div", { style: rowStyle, "data-dsh-easyrewrite": "user", "data-preview-size": pSize, "data-time-hover-root": true },
+        renderMessageAttachmentsCompat(pc, props, pSize),
+        shouldRenderBubble ? React.createElement(
           "div", { className: "dsh-easyrewrite-bubble", style: bubbleStyle, onClick: onBubbleClick, title: L.clickEdit },
           text || L.emptyMsg
-        ),
+        ) : null,
         confirming
           ? React.createElement(ConfirmCapsule, {
               text: afterCount === 0 ? L.recallText0 : (onlyUser ? L.recallTextQ.replace("{n}", String(afterCount)) : L.recallTextC.replace("{n}", String(afterCount))),
-              onConfirm: function () {
+              onConfirm: async function () {
                 setConfirming(false);
                 // 惰性提交：此刻只记录 pending + 回填输入框，真正修改发生在「发送」时
                 // 注意：anchorSeq 对窗口外历史消息会退化，必须用 node.data.seq（UserMessageNode 的真实事件 seq）
                 var conflictMode = draftConflictMode();
                 var visualMode = recallVisualMode();
                 var realSeq = (data && typeof data.seq === "number") ? data.seq : anchorSeq;
-                // 撤回确认：先收集本条消息图片 refs（随 pending 持久化，发送时 imageIds 失效的兜底）
+                // 撤回确认：先收集本条消息图片与文件 refs（随 pending 持久化，发送时 imageIds 失效的兜底）
                 var rcAt = [];
                 try {
                   if (data && Array.isArray(data.content)) {
                     for (var rcAi = 0; rcAi < data.content.length; rcAi++) {
                       var rcAb = data.content[rcAi];
-                      if (rcAb && rcAb.type === "image" && rcAb.attachment && typeof rcAb.attachment.attachmentId === "string") {
-                        rcAt.push({ attachmentId: rcAb.attachment.attachmentId, mediaType: rcAb.attachment.mediaType, name: rcAb.attachment.name });
+                      if (rcAb && (rcAb.type === "image" || rcAb.type === "file") && rcAb.attachment && typeof rcAb.attachment.attachmentId === "string") {
+                        rcAt.push({
+                          attachmentId: rcAb.attachment.attachmentId,
+                          mediaType: rcAb.attachment.mediaType || "",
+                          name: rcAb.attachment.name || (rcAb.type === "image" ? "image.png" : "file"),
+                          isFile: rcAb.type === "file"
+                        });
                       }
                     }
                   }
                 } catch (e) { /* ignore */ }
-                // 快照用户确认前输入框已有的图（× 取消时保留；消息自身的图走 attachRefs）
+
+                // 核心隔离防护：收集用户当前输入框原草稿（文本与真实附件 File 实例）
+                var userOrigDraft = (draftRef && typeof draftRef.current === "string") ? draftRef.current : "";
+                if (!userOrigDraft && props && props.inputActions) {
+                  try { userOrigDraft = readCurrentComposerText("", props); } catch (eText) {}
+                }
                 var preUserImageIds = [];
                 try {
                   preUserImageIds = getInputImageIdsCompat(props.inputState);
                 } catch (e) { /* ignore */ }
+                var userOrigFiles = [];
+                try {
+                  userOrigFiles = await extractBottomDraftFiles(sessionId, preUserImageIds, props, []);
+                } catch (eExBf) {
+                  log("warn", "recall", "提取原草稿附件文件失败", { err: String(eExBf) });
+                }
+                if (userOrigFiles && userOrigFiles.length > 0) {
+                  stageRecallOriginalFiles(sessionId, userOrigFiles);
+                } else {
+                  clearRecallOriginalFiles(sessionId);
+                }
+
                 writePending(sessionId, {
                   type: "recall",
                   targetKey: myKey,
                   targetSeq: realSeq,
                   draftText: text,
-                  originalDraft: draftRef.current,
+                  originalDraft: userOrigDraft,
+                  hasOriginalFiles: !!(userOrigFiles && userOrigFiles.length > 0),
                   conflictMode: conflictMode,
                   visualMode: visualMode,
                   attachRefs: rcAt,
                   preUserImageIds: preUserImageIds,
                   updatedAt: Date.now()
                 });
+
                 var ia = props.inputActions;
+                // 清理输入框原有附件（隔离原草稿附件，严禁与撤回附件混杂或混发）
+                try { pruneInputImagesCompat(ia, []); } catch (ePrune) {}
+
+                // 填入被撤回消息纯文本（严禁与下方原有草稿拼接 merge，原草稿由暂存池在取消或发送后负责复原）
                 if (ia && typeof ia.setDraft === "function") {
-                  var nextDraft = (conflictMode === "merge" && draftRef.current !== "") ? draftRef.current + "\n" + text : text;
-                  ia.setDraft(nextDraft);
+                  ia.setDraft(text);
                 }
                 // 撤回确认后：把本条消息的图片立即重建到输入框（官方 addImages → 官方图预览，自带删除键）
                 // rcAt 已在上方收集并随 pending 持久化
@@ -1092,7 +1582,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
               // 撤回键：rewrite 关闭且二级「关闭时显示撤回键」也关闭 → 隐藏
               (!rewriteOnClick() && !editOffShowRecall())
                 ? null
-                : actionButton("撤回", "撤回", function (e) {
+                : actionButton("撤回", "撤回", async function (e) {
                     e.stopPropagation();
                     if (pending && pending.type === "recall") {
                       log("warn", "recall", "已有待处理撤回（单待定约束）");
@@ -1115,25 +1605,53 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                         if (data && Array.isArray(data.content)) {
                           for (var rcAi2 = 0; rcAi2 < data.content.length; rcAi2++) {
                             var rcAb2 = data.content[rcAi2];
-                            if (rcAb2 && rcAb2.type === "image" && rcAb2.attachment && typeof rcAb2.attachment.attachmentId === "string") {
-                              rcAt2.push({ attachmentId: rcAb2.attachment.attachmentId, mediaType: rcAb2.attachment.mediaType, name: rcAb2.attachment.name });
+                            if (rcAb2 && (rcAb2.type === "image" || rcAb2.type === "file") && rcAb2.attachment && typeof rcAb2.attachment.attachmentId === "string") {
+                              rcAt2.push({
+                                attachmentId: rcAb2.attachment.attachmentId,
+                                mediaType: rcAb2.attachment.mediaType || "",
+                                name: rcAb2.attachment.name || (rcAb2.type === "image" ? "image.png" : "file"),
+                                isFile: rcAb2.type === "file"
+                              });
                             }
                           }
                         }
                       } catch (eRc) { /* ignore */ }
+
+                      // 核心隔离防护：收集用户当前输入框原草稿（文本与真实附件 File 实例）
+                      var userOrigDraft2 = (draftRef && typeof draftRef.current === "string") ? draftRef.current : "";
+                      if (!userOrigDraft2 && props && props.inputActions) {
+                        try { userOrigDraft2 = readCurrentComposerText("", props); } catch (eText2) {}
+                      }
                       var preUserImageIds2 = [];
                       try {
                         preUserImageIds2 = getInputImageIdsCompat(props.inputState);
                       } catch (ePre) { /* ignore */ }
+                      var userOrigFiles2 = [];
+                      try {
+                        userOrigFiles2 = await extractBottomDraftFiles(sessionId, preUserImageIds2, props, []);
+                      } catch (eExBf2) {
+                        log("warn", "recall", "提取原草稿附件文件失败", { err: String(eExBf2) });
+                      }
+                      if (userOrigFiles2 && userOrigFiles2.length > 0) {
+                        stageRecallOriginalFiles(sessionId, userOrigFiles2);
+                      } else {
+                        clearRecallOriginalFiles(sessionId);
+                      }
+
                       writePending(sessionId, {
                         type: "recall", targetKey: myKey, targetSeq: rSeq, draftText: text,
-                        originalDraft: draftRef.current, conflictMode: cMode, visualMode: vMode,
+                        originalDraft: userOrigDraft2, hasOriginalFiles: !!(userOrigFiles2 && userOrigFiles2.length > 0),
+                        conflictMode: cMode, visualMode: vMode,
                         attachRefs: rcAt2, preUserImageIds: preUserImageIds2,
                         updatedAt: Date.now()
                       });
                       var ia2 = props.inputActions;
+                      // 清理输入框原有附件（隔离原草稿附件，严禁与撤回附件混杂或混发）
+                      try { pruneInputImagesCompat(ia2, []); } catch (ePrune2) {}
+
+                      // 填入被撤回消息纯文本（严禁与下方原有草稿拼接 merge）
                       if (ia2 && typeof ia2.setDraft === "function") {
-                        ia2.setDraft(cMode === "merge" && draftRef.current !== "" ? draftRef.current + "\n" + text : text);
+                        ia2.setDraft(text);
                       }
                       try {
                         if (rcAt2.length > 0) {

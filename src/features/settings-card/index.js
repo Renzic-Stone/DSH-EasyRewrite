@@ -16,7 +16,9 @@ import {
   recallConfirmEnabled,
   recallVisualMode,
   draftConflictMode,
-  showOriginalImages
+  showOriginalImages,
+  messagePreviewSize,
+  vaultStorageLocation
 } from "../../core/constants.js";
 import { editWidthMode, editWidthCustom } from "../bubble/width.js";
 import {
@@ -30,7 +32,7 @@ import {
   formatHotkey
 } from "../recall/hotkey.js";
 import { countContentAfter, statOnlyUser } from "../other/helpers.js";
-import { listVersionFamilies } from "../../core/session.js";
+import { listVersionFamilies, useVersionFamilies, restoreSessionVersion } from "../../core/session.js";
 import { legacyCopy } from "../../core/ui.js";
 
     function EasyRewriteSettingsCard(props) {
@@ -202,11 +204,23 @@ import { legacyCopy } from "../../core/ui.js";
       var sCustom = React.useState(String(editWidthCustom()));
       var customW = sCustom[0];
       var setCustomW = sCustom[1];
+      var sPreviewSize = React.useState(messagePreviewSize());
+      var previewSize = sPreviewSize[0];
+      var setPreviewSize = sPreviewSize[1];
       // review A1-5：showOriginalImages 开关的 hook 必须在顶层无条件调用——原先包在 open? 分支内的 IIFE 里，
       // 展开卡片瞬间 hook 数 +1 → React #300 → 设置卡片点不开（2b94851 引入，2026-09-04 用户实测复现）
       var sOrigImg = React.useState(showOriginalImages());
       var origImg = sOrigImg[0];
       var setOrigImg = sOrigImg[1];
+      var sVaultLoc = React.useState(vaultStorageLocation());
+      var vaultLoc = sVaultLoc[0];
+      var setVaultLoc = sVaultLoc[1];
+      var sCleanState = React.useState({ cleaning: false, msg: "" });
+      var cleanState = sCleanState[0];
+      var setCleanState = sCleanState[1];
+      var famHook = useVersionFamilies(props.ctxSessions);
+      var allFamilies = famHook.families;
+      var refreshFamilies = famHook.refresh;
 
       // 官方 PluginCard 同款：卡片/展开态/头部/标题/描述/箭头/内容区
       var cardStyle = {
@@ -452,24 +466,103 @@ import { legacyCopy } from "../../core/ui.js";
               React.createElement("span", { style: hintStyle }, conflict === "merge" ? L.conflictMerge : L.conflictOverwrite)
             )
           ),
+          // —— 其他配置 / 外观与辅助 ——
+          React.createElement("div", { style: sectionStyle },
+            React.createElement("span", { style: groupTitleStyle }, L.rowOtherTitle || "外观与辅助设置"),
+            // 消息预览大小：小（收为紧凑小方框，默认） vs 放大（图片放大呈现官方高度 + 大文件卡片）
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.messagePreviewSize),
+              segmentedGroup([["small", L.previewSizeSmall], ["large", L.previewSizeLarge]], (previewSize === "large" || previewSize === "standard") ? "large" : "small", function (v) {
+                setPreviewSize(v);
+                setSetting("dsh-easyrewrite:messagePreviewSize", v);
+              }),
+              React.createElement("span", { style: hintStyle }, (previewSize === "large" || previewSize === "standard") ? L.previewSizeHintLarge : L.previewSizeHintSmall)
+            )
+          ),
           // —— 版本 ——
           React.createElement("div", { style: sectionStyle },
             React.createElement("span", { style: groupTitleStyle }, L.sectionVersions),
+            // 影子仓储路径选择（嵌套 fork）
+            React.createElement("div", { style: groupStyle },
+              React.createElement("span", { style: labelStyle }, L.vaultLocation),
+              segmentedGroup([["global", L.vaultGlobal], ["workspace", L.vaultWorkspace]], vaultLoc, function (v) {
+                setVaultLoc(v);
+                setSetting("dsh-easyrewrite:vaultStorageLocation", v);
+                fetch("/bubble/vault/config", {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({ storageMode: v }),
+                  keepalive: true
+                }).catch(function () {});
+              }),
+              React.createElement("span", { style: hintStyle }, vaultLoc === "workspace" ? L.vaultWorkspaceHint : L.vaultGlobalHint)
+            ),
+            // 一键清理历史遗留僵尸归档（解决 DSH 0.2 侧边栏展开 100+ 废会话污染）
+            React.createElement("div", { style: rowStyle },
+              React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "2px", flex: "1", minWidth: "0" } },
+                React.createElement("span", { style: labelStyle }, L.cleanLegacyArchived),
+                React.createElement("span", { style: hintStyle }, cleanState.msg || L.cleanLegacyArchivedHint)
+              ),
+              React.createElement("button", {
+                type: "button",
+                disabled: cleanState.cleaning,
+                style: {
+                  appearance: "none",
+                  border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+                  background: "transparent",
+                  color: "var(--dsw-alias-label-secondary)",
+                  borderRadius: "6px",
+                  padding: "3px 10px",
+                  fontSize: "12px",
+                  cursor: cleanState.cleaning ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  flex: "none",
+                  opacity: cleanState.cleaning ? 0.45 : 1
+                },
+                onClick: function () {
+                  setCleanState({ cleaning: true, msg: L.cleaning });
+                  fetch("/bubble/cleanup-legacy-archived", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({}),
+                    keepalive: true
+                  }).then(function (r) { return r.json(); }).then(function (res) {
+                    if (res && res.ok && (res.migratedCount > 0 || res.prunedEmptyCount > 0)) {
+                      var totalConverted = (res.migratedCount || 0) + (res.prunedEmptyCount || 0);
+                      var retained = res.retainedCount || 0;
+                      var doneText = (L.cleanDone || "智能迁移完成：已转化 {n} 个历史版本入库，保留 {r} 个用户主动归档！")
+                        .replace("{n}", String(totalConverted))
+                        .replace("{r}", String(retained));
+                      setCleanState({ cleaning: false, msg: doneText });
+                    } else {
+                      setCleanState({ cleaning: false, msg: L.cleanNone });
+                    }
+                  }).catch(function () {
+                    setCleanState({ cleaning: false, msg: L.errGeneric });
+                  });
+                }
+              }, cleanState.cleaning ? L.cleaning : L.cleanLegacyArchived)
+            ),
             // 版本历史（三层折叠）：总开关默认收起 → 按对话名的家族折叠项 → 条目显最后对话时间
-            // （官方无归档恢复入口，此处保留恢复并打开；review #6 后家族来自官方 lineage）
+            // （融合影子仓储 Vault 与官方 lineage 全量版本树）
             React.createElement("div", { style: groupStyle },
               (function () {
-                var families = listVersionFamilies(props.ctxSessions);
-                if (families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
+                var families = allFamilies;
+                if (!families || families.length === 0) return React.createElement("span", { style: hintStyle }, L.versionFamilyNone);
                 var snap = null;
-                try { snap = props.ctxSessions.list.getSnapshot(); } catch (e) { /* ignore */ }
+                try { snap = props.ctxSessions && props.ctxSessions.list && props.ctxSessions.list.getSnapshot ? props.ctxSessions.list.getSnapshot() : null; } catch (e) { /* ignore */ }
                 var metaOf = function (vid) { return (snap && snap.byId && snap.byId[vid]) || {}; };
                 var famName = function (fam) {
+                  if (fam && fam.title) return fam.title;
                   var best = null, bt = -1;
-                  fam.versions.forEach(function (vid) {
-                    var m = metaOf(vid); var tt = m.updatedAt || 0;
-                    if (tt >= bt) { bt = tt; best = m.title || null; }
-                  });
+                  if (Array.isArray(fam.versions)) {
+                    fam.versions.forEach(function (v) {
+                      var vid = typeof v === "string" ? v : (v.sessionId || v.sourceSessionId);
+                      var m = vid ? metaOf(vid) : {};
+                      var tt = m.updatedAt || (v.createdAt || 0);
+                      if (tt >= bt) { bt = tt; best = m.title || v.summary || null; }
+                    });
+                  }
                   return best || (fam.versions.length + " " + L.versionCount);
                 };
                 var fmtStamp = function (tsv) {
@@ -492,35 +585,42 @@ import { legacyCopy } from "../../core/ui.js";
                   React.createElement("div", { style: hdrRow, onClick: function () { setHistOpen(!histOpen); } },
                     chev(histOpen),
                     React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-secondary)" } }, L.versionHistory),
-                    React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", marginLeft: "auto" } }, families.length + "")
+                    React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", marginLeft: "auto" } }, families.length + " 个家族")
                   ),
                   histOpen ? families.map(function (fam) {
-                    var open = !!famOpenMap[fam.rootId];
-                    return React.createElement("div", { key: fam.rootId, style: { display: "flex", flexDirection: "column", gap: "2px", padding: "2px 0 2px 12px", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.14))" } },
-                      React.createElement("div", { style: hdrRow, onClick: function () { var nm = {}; for (var ok2 in famOpenMap) nm[ok2] = famOpenMap[ok2]; nm[fam.rootId] = !open; setFamOpenMap(nm); } },
+                    var fid = fam.sessionId || fam.rootId;
+                    var open = !!famOpenMap[fid];
+                    var vList = fam.versions || [];
+                    return React.createElement("div", { key: fid, style: { display: "flex", flexDirection: "column", gap: "2px", padding: "2px 0 2px 12px", borderTop: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.14))" } },
+                      React.createElement("div", { style: hdrRow, onClick: function () { var nm = {}; for (var ok2 in famOpenMap) nm[ok2] = famOpenMap[ok2]; nm[fid] = !open; setFamOpenMap(nm); } },
                         chev(open),
                         React.createElement("span", { style: { fontSize: "12px", color: "var(--dsw-alias-label-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1" } }, famName(fam)),
-                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", flex: "none", marginLeft: "auto" } }, fam.versions.length + " " + L.versionCount)
+                        fam.isVault ? React.createElement("span", { style: { fontSize: "10px", padding: "1px 6px", borderRadius: "4px", background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.1))", color: "var(--dsw-alias-label-tertiary)", marginRight: "6px" } }, "Vault") : null,
+                        React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", flex: "none", marginLeft: "auto" } }, vList.length + " " + L.versionCount)
                       ),
-                      open ? fam.versions.map(function (vid, vi) {
-                        return React.createElement("div", { key: vid, style: rowHead },
-                          React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none", width: "26px" } }, "v" + (vi + 1)),
-                          React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "1" } }, fmtStamp(metaOf(vid).updatedAt)),
-                          React.createElement("button", {
-                            type: "button",
-                            style: { appearance: "none", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))", background: "transparent", color: "var(--dsw-alias-label-secondary)", borderRadius: "6px", padding: "2px 8px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" },
-                            onClick: function (ev) {
-                              ev.stopPropagation();
-                              fetch("/bubble/unarchive", {
-                                method: "POST",
-                                headers: { "content-type": "application/json" },
-                                body: JSON.stringify({ sessionId: vid }),
-                                keepalive: true
-                              }).then(function () {
-                                if (typeof props.openSession === "function") props.openSession(vid);
-                              }).catch(function () { /* ignore */ });
-                            }
-                          }, L.versionRestoreOpen)
+                      open ? vList.map(function (ver, vi) {
+                        var isVault = fam.isVault;
+                        var vNum = isVault ? ver.versionNumber : (vi + 1);
+                        var vStamp = isVault ? (ver.createdAt || ver.updatedAt) : metaOf(ver).updatedAt;
+                        var isCur = isVault ? (ver.isCurrent || vi === fam.currentVersionIndex) : false;
+                        var summary = isVault && ver.summary ? ver.summary : null;
+
+                        return React.createElement("div", { key: isVault ? ver.versionNumber : ver, style: rowHead },
+                          React.createElement("span", { style: { fontSize: "11px", fontWeight: isCur ? "bold" : "normal", color: isCur ? "var(--dsw-alias-brand-primary, #4d6bfe)" : "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none", width: "26px" } }, "v" + vNum),
+                          React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-tertiary)", fontVariantNumeric: "tabular-nums", flex: "none", width: "110px" } }, fmtStamp(vStamp)),
+                          summary ? React.createElement("span", { style: { fontSize: "11px", color: "var(--dsw-alias-label-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: "1", minWidth: "0" }, title: summary }, summary) : React.createElement("span", { style: { flex: "1" } }),
+                          isCur
+                            ? React.createElement("span", { style: { fontSize: "11px", padding: "2px 8px", borderRadius: "4px", background: "rgba(46,160,67,0.15)", color: "#2ea043", flex: "none" } }, "当前")
+                            : React.createElement("button", {
+                                type: "button",
+                                style: { appearance: "none", border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))", background: "transparent", color: "var(--dsw-alias-label-secondary)", borderRadius: "6px", padding: "2px 8px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit", flex: "none" },
+                                onClick: function (ev) {
+                                  ev.stopPropagation();
+                                  restoreSessionVersion(fam, ver, props).then(function (res) {
+                                    if (res && res.ok && refreshFamilies) refreshFamilies();
+                                  });
+                                }
+                              }, L.versionRestoreOpen)
                         );
                       }) : null
                     );

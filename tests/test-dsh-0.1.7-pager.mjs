@@ -13,7 +13,8 @@ console.log('--- 开始测试：DSH 0.1.7 翻页器与跨版本会话切换专�
 // [Test 1] 静态特征与版本上限检测
 // =========================================================================
 console.log('[Test 1] 静态特征与版本常量检测...');
-assert.ok(bundleCode.includes('0.1.7-rc.2'), '构建产物必须包含 0.1.7-rc.2 验证上限');
+assert.ok(bundleCode.includes('0.2.5'), '构建产物必须包含 0.2.5 验证上限');
+assert.ok(bundleCode.includes('createBlankChildSession'), '构建产物必须包含 createBlankChildSession 函数');
 assert.ok(bundleCode.includes('invokeOpenSession'), '构建产物必须包含 invokeOpenSession 函数');
 assert.ok(!bundleCode.includes('openSession: function (id) { ctx.sessions.open(id); }'), '构建产物不得包含裸调 ctx.sessions.open 的注入');
 console.log('✓ 静态检测全部通过');

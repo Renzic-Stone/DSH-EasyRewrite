@@ -2,6 +2,7 @@ import * as React from "react";
 import { useUILocaleDict } from "../../core/i18n.js";
 import {
   draftConflictMode,
+  messagePreviewSize,
   setSetting,
   getBool,
   setBool
@@ -22,11 +23,12 @@ export function OtherSettingsPage(props) {
     segmentedGroup
   } = styles;
 
+  const [previewSize, setPreviewSize] = React.useState(messagePreviewSize());
   const [conflict, setConflict] = React.useState(draftConflictMode());
   const [debugOn, setDebugOn] = React.useState(getBool("dsh-easyrewrite:debug", false));
 
   if (props && props.view === "summary") {
-    return L.rowOtherDesc || "草稿回填冲突模式配置（覆盖/合并）及开发者调试日志等底层辅助选项。";
+    return L.rowOtherDesc || "消息预览大小外观（小/放大）、草稿回填冲突模式配置及底层辅助选项。";
   }
 
   return React.createElement("div", {
@@ -34,7 +36,19 @@ export function OtherSettingsPage(props) {
     "data-dsh-easyrewrite": "other-settings"
   },
     React.createElement("div", { style: sectionStyle },
-      React.createElement("span", { style: groupTitleStyle }, L.rowOtherTitle || L.sectionComposer),
+      React.createElement("span", { style: groupTitleStyle }, L.rowOtherTitle || "外观与辅助设置"),
+      // 消息预览大小：小（收为紧凑小方框，默认） vs 放大（图片放大呈现官方高度 + 大文件卡片）
+      React.createElement("div", { style: groupStyle },
+        React.createElement("span", { style: labelStyle }, L.messagePreviewSize),
+        segmentedGroup([
+          ["small", L.previewSizeSmall],
+          ["large", L.previewSizeLarge]
+        ], (previewSize === "large" || previewSize === "standard") ? "large" : "small", (v) => {
+          setPreviewSize(v);
+          setSetting("dsh-easyrewrite:messagePreviewSize", v);
+        }),
+        React.createElement("span", { style: hintStyle }, (previewSize === "large" || previewSize === "standard") ? L.previewSizeHintLarge : L.previewSizeHintSmall)
+      ),
       React.createElement("div", { style: groupStyle },
         React.createElement("span", { style: labelStyle }, L.conflictMode),
         segmentedGroup([

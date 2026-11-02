@@ -6,7 +6,7 @@ import { formatClock } from "../../core/ui.js";
 import { usePending, readPending, writePending } from "./store.js";
 import { barApplyTune, barApplyCircTune, barTune } from "./tune.js";
 import { safeOpenSession } from "./safe-session.js";
-import { resetConversation } from "../history/pager.js";
+import { createBlankChildSession, resetConversation } from "../history/pager.js";
 import { requestCleanGhostQueue } from "./ghost.js";
 import { findPrimaryButton, isStopButton, setPrimaryButtonSendingState, readCurrentComposerText } from "./buttons.js";
 import {
@@ -16,9 +16,15 @@ import {
   collectOutgoingFiles,
   stageOutgoingFiles,
   consumeStagedFiles,
+  stageBottomDraftFiles,
+  consumeBottomDraftFiles,
+  getRecallOriginalFiles,
+  clearRecallOriginalFiles,
+  restoreDraftFilesCompat,
   rebuildDraftAttachments
 } from "../bubble/attachments.js";
 import {
+  serviceRefs,
   addInputImagesCompat,
   removeInputImageCompat,
   pruneInputImagesCompat,
@@ -99,31 +105,31 @@ import {
         xBtn.addEventListener("click", function (e) {
           e.stopPropagation();
           var ia = props.inputActions;
-          if (ia && typeof ia.setDraft === "function" && typeof pending.originalDraft === "string") {
-            ia.setDraft(pending.originalDraft); // 恢复输入框原草稿（覆盖/合并统一恢复）
+          var origText = (pending && typeof pending.originalDraft === "string") ? pending.originalDraft : "";
+          if (ia && typeof ia.setDraft === "function") {
+            ia.setDraft(origText); // 恢复输入框原草稿（覆盖/合并统一恢复）
           }
-          // 取消撤回：目标终态=仅保留用户确认前已有的图（preUserImageIds）；移除其余（重建的消息图等）
-          // v2.4.0 rc.1联测修复：清理步骤拆为独立防御段（每段单独try+日志），任何一段失败不拖垮其余；
-          // 输入态读取双宿主兼容（props.useInput / props.inputState）
-          var keepArr = Array.isArray(pending.preUserImageIds) ? pending.preUserImageIds : [];
-          var curX = [];
+          // 取消撤回：清理输入框中撤回消息的附件，并恢复原草稿附件文件
           try {
-            curX = getInputImageIdsCompat(props.inputState);
-          } catch (eRead) { log("warn", "recall", "× 读取输入框图片清单失败", { err: String(eRead && eRead.message ? eRead.message : eRead) }); }
-          var removedAny = false;
-          for (var ci = 0; ci < curX.length; ci++) {
-            if (keepArr.indexOf(curX[ci]) !== -1) continue;
-            try {
-              if (removeInputImageCompat(ia, curX[ci])) removedAny = true;
-            } catch (e3) { log("warn", "recall", "× removeImage 单项失败", { id: curX[ci], err: String(e3 && e3.message ? e3.message : e3) }); }
+            pruneInputImagesCompat(ia, []);
+          } catch (ePrune) {
+            log("warn", "recall", "× pruneImages 失败", { err: String(ePrune && ePrune.message ? ePrune.message : ePrune) });
           }
-          if (curX.length > 0) {
-            try { pruneInputImagesCompat(ia, keepArr); } catch (e4) { log("warn", "recall", "× pruneImages 失败", { err: String(e4 && e4.message ? e4.message : e4) }); }
-          }
-          log("info", "recall", "× 清理完成", { before: curX.length, keep: keepArr.length, removedAny: removedAny });
           clearPendingAttachIds();
+
+          // 核心闭环：从暂存池取出原草稿真实附件并在输入框恢复
+          var origFiles = getRecallOriginalFiles(sessionId);
+          if (origFiles && origFiles.length > 0) {
+            try {
+              restoreDraftFilesCompat(ia, origFiles, sessionId);
+              log("info", "recall", "× 取消撤回：原草稿附件已成功恢复", { count: origFiles.length });
+            } catch (eRest) {
+              log("warn", "recall", "× 取消撤回恢复附件失败", { err: String(eRest && eRest.message ? eRest.message : eRest) });
+            }
+          }
+          clearRecallOriginalFiles(sessionId);
           writePending(sessionId, null);
-          log("info", "recall", "pending cancelled（恢复原草稿+清除重建图片）");
+          log("info", "recall", "pending cancelled（恢复原草稿+恢复原附件）");
         });
         bar.appendChild(label);
         bar.appendChild(spacer);
@@ -284,6 +290,40 @@ import {
         return function () { mo.disconnect(); restoreHiddenRows(); };
       }, [active, pending, sessionId]);
 
+      // 监听 Host 会话的 promptError，拦截并将真实原因打印并弹给用户（打破官方 Toast 吞噬 details.reason）
+      React.useEffect(function () {
+        try {
+          var binding = (props.ctxSessions && typeof props.ctxSessions.binding === "function")
+            ? props.ctxSessions.binding(sessionId)
+            : null;
+          var sess = binding ? binding.session : null;
+          if (!sess) return;
+          var lastReported = null;
+          var checkPromptErr = function () {
+            try {
+              var snap = (typeof sess.getSnapshot === "function") ? sess.getSnapshot() : null;
+              var pe = snap && snap.promptError ? snap.promptError.error : null;
+              if (pe && pe !== lastReported) {
+                lastReported = pe;
+                var reason = (pe.details && pe.details.reason) ? pe.details.reason : (pe.message || pe.code);
+                log("error", "recall", "Host promptError 详细拦截", {
+                  code: pe.code,
+                  message: pe.message,
+                  reason: reason,
+                  details: pe.details
+                });
+                showRecallError("发送被拒: " + String(reason));
+              }
+            } catch (eSnap) {}
+          };
+          var unsub = typeof sess.subscribe === "function" ? sess.subscribe(checkPromptErr) : null;
+          checkPromptErr();
+          return function () {
+            if (typeof unsub === "function") unsub();
+          };
+        } catch (eSub) {}
+      }, [sessionId, props.ctxSessions]);
+
       // ---- 发送钩子：pending 存在时拦截 Enter 与发送按钮，先真正撤回再发送 ----
       // （findPrimaryButton / isStopButton / setPrimaryButtonSendingState 在模块级已定义）
       // 撤回发送失败的可见提示：输入滚动区上方插入临时错误条（3.5s 自动移除）
@@ -369,15 +409,14 @@ import {
           // review #7：client 直算边界（判定树），仅在快照无法判定时走保留的 host 路由 fallback
           var localB = computeRecallBoundary(props, p.targetSeq);
           var boundary = null;
+          var isNoBoundary = false;
           if (localB && localB.atSeq) {
             boundary = localB.atSeq;
             log("info", "recall", "本地边界就绪", { targetSeq: p.targetSeq, atSeq: boundary });
           } else if (localB && localB.code === "no-boundary") {
-            // 真首条（窗口内无闭合回合且无更早历史）→ 重置对话
-            log("info", "recall", "本地判定：无前置边界 → 重置对话");
-            showRecallError(L.resetNotice);
-            resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
-            return;
+            // 真首条（窗口内无闭合回合且无更早历史）→ 不弹报错提示，直接与非首条同构走空白子会话创建与影子仓储继承
+            log("info", "recall", "本地判定：首条无前置边界 → 创建同工作区空白新会话");
+            isNoBoundary = true;
           } else {
             // host fallback（localB=null 或 host-fallback）
             log("info", "recall", "本地不可判定，走 host 路由", { mode: localB && localB.code });
@@ -389,44 +428,92 @@ import {
             var data = await resp.json();
             if (!data || !data.ok) {
               var errCode = (data && data.error) || "unknown";
-              log("warn", "recall", "撤回失败（发送中止）", { error: errCode });
-              if (errCode === "turn-open" || errCode === "no-boundary") {
-                showRecallError(L.resetNotice);
-                resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
+              log("warn", "recall", "撤回边界返回非普通分支", { error: errCode });
+              if (errCode === "no-boundary") {
+                isNoBoundary = true;
+              } else if (errCode === "turn-open") {
+                showRecallError(L.turnOpenNotice || L.errGeneric);
+                setPrimaryButtonSendingState(false);
+                sendingRef.current = false;
+                return;
               } else {
                 showRecallError(L.errGeneric);
                 setPrimaryButtonSendingState(false);
                 sendingRef.current = false;
+                return;
               }
+            } else {
+              boundary = data.boundary;
+            }
+          }
+          // 影子仓储预保存：在截断/创建新版本前将当前完整会话备份为快照
+          try {
+            fetch("/bubble/vault/save", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sid, summary: "撤回前完整快照" }),
+              keepalive: true
+            }).catch(function () {});
+          } catch (eVs) {}
+
+          // 1) 创建或分叉目标新会话：
+          //    - 非首条消息：官方 client fork(atSeq)；
+          //    - 首条消息（no-boundary 或 fork 报 has no completed turn to fork from）：同工作区创建空白新会话。
+          var newId = null;
+          if (isNoBoundary) {
+            newId = await createBlankChildSession(sid, props);
+            if (!newId) {
+              log("error", "recall", "首条消息创建空白新会话失败（发送中止）");
+              setPrimaryButtonSendingState(false);
+              sendingRef.current = false;
+              showRecallError(L.errGeneric);
               return;
             }
-            boundary = data.boundary;
-          }
-          // 1) 官方 client fork：child 进入会话列表（可打开）+ 继承原标题。
-          //    官方 fork(atSeq) 即截断边界器；fork-unavailable 按原文子串分流：
-          //    "has not completed the turn"=回合未结束→提示等待；"has no completed turn to fork from"=无前置边界→重置对话。
-          var newId = null;
-          try {
-            newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: boundary });
-          } catch (e) {
-            var em = String(e && e.message ? e.message : e);
-            log("error", "recall", "fork 失败（发送中止）", { err: em });
-            setPrimaryButtonSendingState(false);
-            sendingRef.current = false;
-            if (/has not completed the turn/i.test(em)) {
-              showRecallError(L.turnOpenNotice || L.errGeneric); // 回合未结束：等待回复完成
-            } else if (/has no completed turn to fork from/i.test(em)) {
-              showRecallError(L.resetNotice);
-              resetConversation(sid, "edit", sendText, props, imgIds, null, null, outgoingFiles);
-            } else {
-              showRecallError(L.errGeneric);
+          } else {
+            try {
+              newId = await props.ctxSessions.fork({ sessionId: sid, atSeq: boundary });
+            } catch (e) {
+              var em = String(e && e.message ? e.message : e);
+              log("error", "recall", "fork 失败", { err: em });
+              if (/has not completed the turn/i.test(em)) {
+                setPrimaryButtonSendingState(false);
+                sendingRef.current = false;
+                showRecallError(L.turnOpenNotice || L.errGeneric); // 回合未结束：等待回复完成
+                return;
+              } else if (/has no completed turn to fork from/i.test(em)) {
+                newId = await createBlankChildSession(sid, props);
+                if (!newId) {
+                  setPrimaryButtonSendingState(false);
+                  sendingRef.current = false;
+                  showRecallError(L.errGeneric);
+                  return;
+                }
+              } else {
+                setPrimaryButtonSendingState(false);
+                sendingRef.current = false;
+                showRecallError(L.errGeneric);
+                return;
+              }
             }
-            return;
           }
           // 跨会话图片保护：将收集到的 File 列表暂存给目标新会话
           if (outgoingFiles.length > 0) {
             stageOutgoingFiles(newId, outgoingFiles);
           }
+          // 底部原草稿保护：将原草稿文件暂存给新会话
+          var stagedUserFiles = getRecallOriginalFiles(sid);
+          if (stagedUserFiles && stagedUserFiles.length > 0) {
+            stageBottomDraftFiles(newId, stagedUserFiles);
+          }
+          clearRecallOriginalFiles(sid);
+
+          var userOrigDraft = (p && typeof p.originalDraft === "string") ? p.originalDraft : "";
+          var stagedDraftPayload = (userOrigDraft || (stagedUserFiles && stagedUserFiles.length > 0)) ? {
+            text: userOrigDraft,
+            imageIds: [],
+            hasFiles: (stagedUserFiles && stagedUserFiles.length > 0)
+          } : null;
+
           // Issue #10 根治防御：fork 成功返回即请求 Host 端物理拔除继承的幽灵旧消息
           await requestCleanGhostQueue(newId);
           // review M6：resume-send 带时间戳（30s TTL，防陈旧草稿幽灵自动发送）
@@ -436,21 +523,11 @@ import {
               t: Date.now(),
               imageIds: imgIds,
               attachRefs: (p && Array.isArray(p.attachRefs)) ? p.attachRefs : [],
-              sel: msel
+              sel: msel,
+              stagedDraft: stagedDraftPayload
             }));
           } catch (e) { /* ignore */ }
-          // 2) 无痕替换：归档原会话 → 打开新会话
-          var archived = false;
-          try {
-            if (typeof props.ctxWorkspaces !== "undefined" && typeof props.ctxWorkspaces.archiveSession === "function") {
-              // review M8：await + catch，避免 unhandled rejection
-              await Promise.resolve(props.ctxWorkspaces.archiveSession(sid)).catch(function () { /* ignore */ });
-              archived = true;
-            }
-          } catch (e) { log("warn", "recall", "归档原会话失败", { err: String(e && e.message ? e.message : e) }); }
-          log("info", "recall", "撤回完成：归档原会话 + 打开新会话", { newId: newId, archived: archived });
-
-          // 稳健切换会话（多重通道与降级）
+          // 稳健切换会话（多重通道与降级）：先打开新会话释放老会话占用，再将老会话移入影子仓储并继承版本链
           var opened = safeOpenSession(newId, props);
           if (!opened) {
             log("error", "recall", "打开新会话失败，回滚状态", { newId: newId });
@@ -460,6 +537,22 @@ import {
             showRecallError(L.errGeneric);
             return;
           }
+
+          // 2) 影子仓储（嵌套 fork）：将原会话存入 EasyRewrited_Sessions，克隆版本链给新会话，并安全从工作区除名（绝不污染归档侧栏）
+          var retired = false;
+          try {
+            var retResp = await fetch("/bubble/vault/retire-session", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: sid, replacementSessionId: newId }),
+              keepalive: true
+            });
+            var retData = await retResp.json();
+            retired = !!(retData && retData.ok);
+          } catch (eRet) {
+            log("warn", "recall", "影子仓储移出会话失败，尝试静默降级", { err: String(eRet && eRet.message ? eRet.message : eRet) });
+          }
+          log("info", "recall", "撤回完成：移入影子仓储 + 打开新版本", { newId: newId, retired: retired });
 
           // 确认会话切换派发成功后再清除 pending 数据（保持 sendingRef 保护，直到组件随新会话打开而卸载）
           writePending(sid, null);
@@ -544,7 +637,8 @@ import {
             ia.setDraft(r.draftText);
             log("info", "recall", "resume：回填草稿并自动发送", { sessionId: sessionId, tries: tries, imgs: Array.isArray(r.imageIds) ? r.imageIds.length : 0, hasSel: !!(r.sel && props.modelSel) });
 
-            // 跨会话图片草稿重建：优先使用暂存的 File 重新在目标会话生成草稿，突破老会话 release 限制
+            // 跨会话图片与文件草稿重建：优先使用暂存的 File 重新在目标会话生成草稿，突破老会话 release 限制
+            var preparedAttachmentIds = [];
             var prepareImages = async function () {
               var stagedFiles = consumeStagedFiles(sessionId);
               if (stagedFiles && stagedFiles.length > 0) {
@@ -552,8 +646,11 @@ import {
                   var newDrafts = createDraftImagesCompat(stagedFiles, sessionId);
                   if (newDrafts && newDrafts.length > 0) {
                     var newIds = newDrafts.map(function (d) { return d.id; });
+                    preparedAttachmentIds = newIds.slice();
                     addInputImagesCompat(ia, newIds);
                     log("info", "attach", "新会话草稿附件已重建并填入", { count: newIds.length });
+                    // 给 React 状态与微任务批处理 60ms 渲染缓冲
+                    await new Promise(function (res) { setTimeout(res, 60); });
                     return newIds;
                   }
                 } catch (eDrafts) {
@@ -563,11 +660,16 @@ import {
                 try {
                   var cnt = await rebuildDraftAttachments(r.attachRefs, props, sessionId, false);
                   log("info", "attach", "通过 attachRefs 重建完成", { count: cnt });
+                  await new Promise(function (res) { setTimeout(res, 60); });
                 } catch (eRb) {
                   log("warn", "attach", "通过 attachRefs 重建失败", { err: String(eRb && eRb.message ? eRb.message : eRb) });
                 }
               } else if (Array.isArray(r.imageIds) && r.imageIds.length > 0) {
-                try { addInputImagesCompat(ia, r.imageIds); } catch (e) { /* ignore */ }
+                try {
+                  preparedAttachmentIds = r.imageIds.slice();
+                  addInputImagesCompat(ia, r.imageIds);
+                  await new Promise(function (res) { setTimeout(res, 60); });
+                } catch (e) { /* ignore */ }
               }
               return [];
             };
@@ -630,33 +732,93 @@ import {
 
             var doSubmit = function () {
               cleanGhostQueue().then(function () {
-                setTimeout(function () {
+                var waitCount = 0;
+                var uploadWaitCount = 0;
+                var submitWhenReady = function () {
                   try {
+                    var binding = (props.ctxSessions && typeof props.ctxSessions.binding === "function")
+                      ? props.ctxSessions.binding(sessionId)
+                      : null;
+                    var sessInst = binding ? binding.session : null;
+                    var snap = (sessInst && typeof sessInst.getSnapshot === "function") ? sessInst.getSnapshot() : null;
+                    // 若新会话仍在 running（如 fork 初始化或前置事务未定），至多等待 800ms
+                    if (snap && snap.running && waitCount < 8) {
+                      waitCount++;
+                      log("debug", "recall", "等待新会话 Agent 就绪", { sessionId: sessionId, waitCount: waitCount });
+                      setTimeout(submitWhenReady, 100);
+                      return;
+                    }
+                    // 若包含普通文档草稿（kind="file"），需等待后台上传至新会话 FileUploads 完成（status === "ready"）
+                    var conv = serviceRefs.conversation;
+                    if (conv && conv.fileUploads && typeof conv.fileUploads.getSnapshot === "function") {
+                      var upSnap = conv.fileUploads.getSnapshot() || {};
+                      var checkIds = preparedAttachmentIds.length > 0 ? preparedAttachmentIds : getInputImageIdsCompat(props.inputState);
+                      var hasUploading = (typeof conv.activeFileUploads === "number" && conv.activeFileUploads > 0);
+                      if (!hasUploading && checkIds && checkIds.length > 0) {
+                        for (var ui = 0; ui < checkIds.length; ui++) {
+                          var uEntry = upSnap[checkIds[ui]];
+                          if (uEntry && uEntry.status === "uploading") {
+                            hasUploading = true;
+                            break;
+                          }
+                        }
+                      }
+                      if (hasUploading && uploadWaitCount < 50) {
+                        uploadWaitCount++;
+                        log("debug", "recall", "等待新会话文件草稿上传就绪", { sessionId: sessionId, uploadWaitCount: uploadWaitCount });
+                        setTimeout(submitWhenReady, 100);
+                        return;
+                      }
+                    }
                     ia.submit();
-                    log("info", "recall", "resume 已提交", { sessionId: sessionId });
-                    // Phase 2：底部暂存草稿及图片在新会话中回填保留（隔离发送，不混入气泡重发消息）
-                    if (r.stagedDraft && (r.stagedDraft.text || (Array.isArray(r.stagedDraft.imageIds) && r.stagedDraft.imageIds.length > 0))) {
+                    log("info", "recall", "resume 已提交", { sessionId: sessionId, waitCount: waitCount, uploadWaitCount: uploadWaitCount });
+                    // Phase 2：底部暂存草稿及图片/文件在新会话中回填保留（隔离发送，不混入气泡重发消息）
+                    if (r.stagedDraft && (r.stagedDraft.text || (Array.isArray(r.stagedDraft.imageIds) && r.stagedDraft.imageIds.length > 0) || r.stagedDraft.hasFiles)) {
                       setTimeout(function () {
                         try {
                           var stg = r.stagedDraft;
                           if (typeof stg.text === "string" && stg.text.length > 0 && typeof ia.setDraft === "function") {
                             ia.setDraft(stg.text);
                           }
-                          var stgImgs = Array.isArray(stg.imageIds) ? stg.imageIds : [];
-                          if (stgImgs.length > 0) {
-                            addInputImagesCompat(ia, stgImgs);
+                          // 核心闭环：优先从 consumeBottomDraftFiles 获取真实 File 并在新会话中创建全新有效草稿
+                          var bFiles = consumeBottomDraftFiles(sessionId);
+                          if (bFiles && bFiles.length > 0) {
+                            try {
+                              var restored = false;
+                              if (typeof restoreDraftFilesCompat === "function") {
+                                restored = restoreDraftFilesCompat(ia, bFiles, sessionId);
+                              }
+                              if (!restored) {
+                                var bDrafts = createDraftImagesCompat(bFiles, sessionId);
+                                if (bDrafts && bDrafts.length > 0) {
+                                  var bDraftIds = bDrafts.map(function (d) { return d.id; });
+                                  addInputImagesCompat(ia, bDraftIds);
+                                }
+                              }
+                              log("info", "recall", "resume 第二阶段：底部暂存文件/图片在新会话中已成功重建回填", { count: bFiles.length });
+                            } catch (eBf) {
+                              log("warn", "recall", "在新会话重建底部草稿文件异常", { err: String(eBf && eBf.message ? eBf.message : eBf) });
+                            }
+                          } else {
+                            var stgImgs = Array.isArray(stg.imageIds) ? stg.imageIds : [];
+                            if (stgImgs.length > 0) {
+                              addInputImagesCompat(ia, stgImgs);
+                            }
                           }
-                          log("info", "recall", "resume 第二阶段：底部暂存草稿及图片已回填", {
+                          log("info", "recall", "resume 第二阶段：底部暂存草稿及附件已回填", {
                             hasText: !!(stg.text && stg.text.length > 0),
-                            imgCount: stgImgs.length
+                            fileCount: bFiles ? bFiles.length : (stg.imageIds ? stg.imageIds.length : 0)
                           });
                         } catch (eStg) {
                           log("warn", "recall", "回填暂存草稿异常", { err: String(eStg && eStg.message ? eStg.message : eStg) });
                         }
-                      }, 160);
+                      }, 800);
                     }
-                  } catch (e) { log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) }); }
-                }, 60);
+                  } catch (e) {
+                    log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) });
+                  }
+                };
+                setTimeout(submitWhenReady, 280);
               });
             };
 

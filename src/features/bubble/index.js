@@ -10,7 +10,7 @@ import { editWidthMode, editWidthCustom } from "./width.js";
 import { createSettingsStyles } from "../../core/ui-settings.js";
 import { UserBubbleView } from "./view.js";
 import { injectThemeStyle } from "./theme.js";
-import { createModelSel } from "../../core/services.js";
+import { createModelSel, getModelDirectories } from "../../core/services.js";
 import { invokeOpenSession } from "../../core/session.js";
 import { log } from "../../core/log.js";
 
@@ -107,19 +107,21 @@ export function registerBubble(ctx) {
           try {
             if (sessionId && ctx.sessions && typeof ctx.sessions.scope === "function") {
               const scope2 = ctx.sessions.scope(sessionId);
-              const conv2 = scope2 ? scope2.get("conversation") : null;
+              const conv2 = (scope2 && typeof scope2.get === "function" ? scope2.get("conversation") : null) || ctx.conversation;
               if (conv2 && conv2.input && typeof conv2.input.for === "function") {
                 inputShell2 = conv2.input.for(scope2);
               }
             }
           } catch (eSh2) { inputShell2 = null; }
-          return {
+          const resolvedActions2 = (inputShell2 && inputShell2.actions)
+            ? inputShell2.actions
+            : (inputShell2 && (typeof inputShell2.setDraft === "function" || typeof inputShell2.submit === "function") ? inputShell2 : null);
+          const injected2 = {
             openSession: (id) => invokeOpenSession(ctx, id),
             ctxWorkspaces: ctx.workspaces,
             ctxSessions: ctx.sessions,
             modelSel,
-            modelDirectories: ctx.modelDirectories,
-            inputActions: inputShell2 && inputShell2.actions ? inputShell2.actions : null,
+            modelDirectories: ctx.modelDirectories || getModelDirectories(),
             inputState: inputShell2,
             restoreSession: (id) => {
               return fetch("/bubble/unarchive", {
@@ -133,6 +135,8 @@ export function registerBubble(ctx) {
               }).catch(() => false);
             }
           };
+          if (resolvedActions2) injected2.inputActions = resolvedActions2;
+          return injected2;
         }
       }, UserBubbleView)
     );

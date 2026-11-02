@@ -209,13 +209,16 @@ export function registerRecall(ctx) {
           try {
             if (typeof ctx.sessions.scope === "function" && sessionId) {
               const scope = ctx.sessions.scope(sessionId);
-              conversationSvc = scope ? scope.get("conversation") : null;
+              conversationSvc = (scope && typeof scope.get === "function" ? scope.get("conversation") : null) || ctx.conversation;
               if (conversationSvc && conversationSvc.input && typeof conversationSvc.input.for === "function") {
                 inputShell = conversationSvc.input.for(scope);
               }
             }
           } catch (eShell) { inputShell = null; }
-          return {
+          const resolvedActions = (inputShell && inputShell.actions)
+            ? inputShell.actions
+            : (inputShell && (typeof inputShell.setDraft === "function" || typeof inputShell.submit === "function") ? inputShell : null);
+          const injected = {
             sessionId,
             openSession: (id) => invokeOpenSession(ctx, id),
             ctxWorkspaces: ctx.workspaces,
@@ -235,7 +238,6 @@ export function registerRecall(ctx) {
               return Promise.resolve();
             },
             modelSel: barModelSel,
-            inputActions: inputShell && inputShell.actions ? inputShell.actions : null,
             inputState: inputShell || null,
             restoreSession: (id) => {
               return fetch("/bubble/unarchive", {
@@ -249,6 +251,8 @@ export function registerRecall(ctx) {
               }).catch(() => false);
             }
           };
+          if (resolvedActions) injected.inputActions = resolvedActions;
+          return injected;
         }
       }, RecallBanner)
     );

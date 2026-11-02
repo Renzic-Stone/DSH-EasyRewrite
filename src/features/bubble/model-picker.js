@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useUILocaleDict } from "../../core/i18n.js";
 import { log } from "../../core/log.js";
+import { getModelDirectories } from "../../core/services.js";
 
     /** 编辑态模型选择 chip（v2.2）：复刻官方输入框模型选择的两级菜单（模型 / 推理等级）。
      * 数据源=官方 modelDirectories.directoryFor(sessionId).store——与下方输入框同源同款；
@@ -12,7 +13,7 @@ import { log } from "../../core/log.js";
       var L = useUILocaleDict();
       var dir = null;
       try {
-        var md = props.modelDirectories;
+        var md = props.modelDirectories || getModelDirectories();
         if (md && typeof md.directoryFor === "function") dir = md.directoryFor(props.sessionId);
       } catch (eDir) { dir = null; }
       var hasStore = !!(dir && dir.store && typeof dir.store.subscribe === "function" && typeof dir.store.getSnapshot === "function");
@@ -155,7 +156,20 @@ import { log } from "../../core/log.js";
           onClick: function (e) { e.stopPropagation(); setMenuOpen(!menuOpen); setView("root"); }
         },
           React.createElement("span", { style: { fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" } }, modelLabel),
-          effortLabel ? React.createElement("span", { style: { color: "var(--dsw-alias-label-caption, var(--dsw-alias-label-tertiary))", flex: "none" } }, effortLabel) : null,
+          effortLabel ? React.createElement("span", {
+            style: {
+              color: "var(--dsw-alias-brand-primary, #4d6bfe)",
+              background: "rgba(77, 107, 254, 0.12)",
+              border: "1px solid rgba(77, 107, 254, 0.30)",
+              borderRadius: "999px",
+              padding: "1px 6px",
+              fontSize: "11px",
+              fontWeight: 600,
+              lineHeight: "16px",
+              flex: "none",
+              margin: "0 2px"
+            }
+          }, effortLabel) : null,
           chevron
         ),
         menuOpen ? React.createElement("div", { role: "menu", style: menuStyle, onClick: function (e) { e.stopPropagation(); } }, body) : null

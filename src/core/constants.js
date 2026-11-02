@@ -2,7 +2,7 @@ export const NS = "dsh-easyrewrite";
 
 export const CURRENT_VERSION = "3.0.0";
 export const MIN_DSH_VERSION = "0.1.2-rc.1";
-export const MAX_TESTED_DSH_VERSION = "0.1.7-rc.2";
+export const MAX_TESTED_DSH_VERSION = "0.2.5";
 
 export const SETTING_KEYS = {
   conflictMode: "dsh-easyrewrite:conflictMode",   // "overwrite" | "merge"
@@ -17,8 +17,14 @@ export const SETTING_KEYS = {
   checkUpdateDaily: "dsh-easyrewrite:checkUpdateDaily",
   lastUpdateCheckTime: "dsh-easyrewrite:lastUpdateCheckTime",
   dismissedUpdateVersion: "dsh-easyrewrite:dismissedUpdateVersion",
-  editWidthMode: "dsh-easyrewrite:editWidthMode"
+  editWidthMode: "dsh-easyrewrite:editWidthMode",
+  messagePreviewSize: "dsh-easyrewrite:messagePreviewSize", // "standard" | "small"
+  vaultStorageLocation: "dsh-easyrewrite:vaultStorageLocation" // "global" | "workspace"
 };
+
+export function vaultStorageLocation() {
+  return getSetting(SETTING_KEYS.vaultStorageLocation, "global");
+}
 
 export function getSetting(key, def) {
   try {
@@ -32,9 +38,23 @@ export function getSetting(key, def) {
 export function setSetting(key, val) {
   try {
     localStorage.setItem(key, val);
+    if (typeof window !== "undefined") {
+      try {
+        if (typeof window.StorageEvent === "function") {
+          window.dispatchEvent(new window.StorageEvent("storage", { key: key, newValue: String(val) }));
+        }
+        window.dispatchEvent(new CustomEvent("dsh-easyrewrite:settings-change", { detail: { key: key, value: val } }));
+      } catch (eEv) {}
+    }
   } catch (e) {
     /* ignore */
   }
+}
+
+export function messagePreviewSize() {
+  const v = getSetting(SETTING_KEYS.messagePreviewSize, "small");
+  if (v === "standard") return "small"; // 旧版本的 standard 自动迁移为默认 small
+  return v === "large" ? "large" : "small";
 }
 
 export function getBool(key, def) {

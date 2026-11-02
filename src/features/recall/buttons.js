@@ -61,16 +61,27 @@ import { log } from "../../core/log.js";
       var snapVal = "";
       var ishell = (props && props.inputState) || null;
 
-      // 1) DOM 物理读取（最高优先级）：直接获取用户在页面中实时敲入的内容（兼容 contenteditable 与 textarea）
+      // 1) DOM 物理读取（最高优先级）：直接获取用户在底部输入框中实时敲入的内容（严格排除气泡编辑框内的 textarea）
       try {
         var el = document.querySelector([
           "[data-input-scroll] [contenteditable='true']",
           "[data-input-scroll] textarea",
           "[data-composer-card='true'] [contenteditable='true']",
           "[data-composer-card='true'] textarea",
-          "[contenteditable='true']",
-          "textarea"
+          "[data-composer-card] [contenteditable='true']",
+          "[data-composer-card] textarea"
         ].join(","));
+        if (!el) {
+          var candidates = document.querySelectorAll("[contenteditable='true'], textarea");
+          for (var ci = 0; ci < candidates.length; ci++) {
+            var cand = candidates[ci];
+            if (cand && typeof cand.closest === "function" && cand.closest('[data-dsh-easyrewrite="user-editing"]')) {
+              continue;
+            }
+            el = cand;
+            break;
+          }
+        }
         if (el) {
           if (el.isContentEditable || el.getAttribute("contenteditable") === "true") {
             var t = typeof el.innerText === "string" ? el.innerText : (el.textContent || "");
