@@ -1,6 +1,6 @@
 {
   "name": "dsh-easyrewrite",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "The most seamless message recall & re-edit plugin for DSH Web — native experience, strong compatibility, simple toggles, rich settings, modern lightweight UI.",
   "icon": "./assets/icon.png",
   "type": "module",

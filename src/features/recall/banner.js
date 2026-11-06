@@ -177,6 +177,8 @@ import {
         // 调参事件：__dshEasyRewrite.bar.set({inset}) → 重算（barTune 已更新，placeBar 读它）
         var onBarTune = function () { try { placeBar(); } catch (eBT) { /* ignore */ } };
         document.addEventListener("dsh-easyrewrite:bar-tune", onBarTune);
+        var onWinResize = function () { try { placeBar(); } catch (e) { /* ignore */ } };
+        window.addEventListener("resize", onWinResize);
         // MutationObserver：官方重渲染 composer（如点击图片删除键）挤掉 bar 后自动复位，× 一直可用
         var mo = null;
         try {
@@ -187,8 +189,6 @@ import {
         return function () {
           try { if (mo) mo.disconnect(); } catch (e) { /* ignore */ }
           try { document.removeEventListener("dsh-easyrewrite:bar-tune", onBarTune); } catch (eBT2) { /* ignore */ }
-        var onWinResize = function () { try { placeBar(); } catch (e) { /* ignore */ } };
-        window.addEventListener("resize", onWinResize);
           try { window.removeEventListener("resize", onWinResize); } catch (e4) { /* ignore */ }
           if (bar.parentNode) bar.parentNode.removeChild(bar);
           barRef.current = null;
@@ -621,6 +621,15 @@ import {
           return;
         }
         var tries = 0;
+        var unmounted = false;
+        var pendingTimeouts = [];
+        function scheduleTimeout(fn, ms) {
+          var tid = setTimeout(function () {
+            if (!unmounted) fn();
+          }, ms);
+          pendingTimeouts.push(tid);
+          return tid;
+        }
         var timer = setInterval(function () {
           tries++;
           var ia = props.inputActions;
@@ -745,7 +754,7 @@ import {
                     if (snap && snap.running && waitCount < 8) {
                       waitCount++;
                       log("debug", "recall", "等待新会话 Agent 就绪", { sessionId: sessionId, waitCount: waitCount });
-                      setTimeout(submitWhenReady, 100);
+                      scheduleTimeout(submitWhenReady, 100);
                       return;
                     }
                     // 若包含普通文档草稿（kind="file"），需等待后台上传至新会话 FileUploads 完成（status === "ready"）
@@ -766,7 +775,7 @@ import {
                       if (hasUploading && uploadWaitCount < 50) {
                         uploadWaitCount++;
                         log("debug", "recall", "等待新会话文件草稿上传就绪", { sessionId: sessionId, uploadWaitCount: uploadWaitCount });
-                        setTimeout(submitWhenReady, 100);
+                        scheduleTimeout(submitWhenReady, 100);
                         return;
                       }
                     }
@@ -774,7 +783,7 @@ import {
                     log("info", "recall", "resume 已提交", { sessionId: sessionId, waitCount: waitCount, uploadWaitCount: uploadWaitCount });
                     // Phase 2：底部暂存草稿及图片/文件在新会话中回填保留（隔离发送，不混入气泡重发消息）
                     if (r.stagedDraft && (r.stagedDraft.text || (Array.isArray(r.stagedDraft.imageIds) && r.stagedDraft.imageIds.length > 0) || r.stagedDraft.hasFiles)) {
-                      setTimeout(function () {
+                      scheduleTimeout(function () {
                         try {
                           var stg = r.stagedDraft;
                           if (typeof stg.text === "string" && stg.text.length > 0 && typeof ia.setDraft === "function") {
@@ -818,11 +827,12 @@ import {
                     log("error", "recall", "自动发送失败（resume）", { err: String(e && e.message ? e.message : e) });
                   }
                 };
-                setTimeout(submitWhenReady, 280);
+                scheduleTimeout(submitWhenReady, 280);
               });
             };
 
             prepareImages().finally(function () {
+              if (unmounted) return;
               // v2.1.1：先把捕获的原模型/挡位写进新会话（官方 selectModel 持久化通道），再自动发送
               if (r.sel && props.modelSel) {
                 props.modelSel.apply(sessionId, r.sel).then(doSubmit, doSubmit);
@@ -834,7 +844,13 @@ import {
             log("error", "recall", "resume 执行异常", { sessionId: sessionId, err: String(eRun && eRun.message ? eRun.message : eRun) });
           }
         }, 100);
-        return function () { clearInterval(timer); };
+        return function () {
+          unmounted = true;
+          clearInterval(timer);
+          for (var ti = 0; ti < pendingTimeouts.length; ti++) {
+            clearTimeout(pendingTimeouts[ti]);
+          }
+        };
       }, [sessionId, resumeKey]);
 
       return null; // 纯 DOM 注入，槽位不渲染内容

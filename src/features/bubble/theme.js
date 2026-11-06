@@ -2,29 +2,45 @@
 import { serviceRefs } from "../../core/services.js";
 import { cachedRebuiltFiles, setDraggedAttachment, clearDraggedAttachment } from "./attachments.js";
 
+    var FILE_CARD_SELECTOR = "[data-dsh-easyrewrite-file-card], .dsh-easyrewrite-file-card, [data-easyrewrite-file-card], [data-easyrewrite-img-card], [class*='_card'][class*='FileCard'], div[class*='gSkjMW_card']";
+
     function installGlobalFileCardDragSupport() {
-      if (typeof window === "undefined" || typeof document === "undefined" || typeof document.addEventListener !== "function" || window.__dshEasyRewriteCardDragInstalled) return;
+      if (typeof window === "undefined" || typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+      // 支持 HMR 热重载：若已有旧版监听则先卸载，并清理曾被旧版误标记在输入框卡片上的 draggable 属性
+      if (typeof window.__dshEasyRewriteCardDragDispose === "function") {
+        try { window.__dshEasyRewriteCardDragDispose(); } catch (eDisp) { /* ignore */ }
+      }
+      try {
+        var pollutedCards = document.querySelectorAll("[data-composer-card][draggable]");
+        for (var pci = 0; pci < pollutedCards.length; pci++) {
+          pollutedCards[pci].removeAttribute("draggable");
+        }
+      } catch (eClean) { /* ignore */ }
       window.__dshEasyRewriteCardDragInstalled = true;
 
-      // 1. 鼠标按下时禁止文本选区，确保 draggable 生效
-      document.addEventListener("mousedown", function (e) {
+      // 1. 鼠标按下时仅对文件/图片附件卡片激活 draggable（严禁匹配底部输入框卡片 [data-composer-card]）
+      var onMouseDown = function (e) {
         try {
           var target = e.target;
-          var card = target && target.closest ? target.closest("[data-dsh-easyrewrite-file-card], .dsh-easyrewrite-file-card, [data-easyrewrite-file-card], [data-easyrewrite-img-card], [class*='_card'], div[class*='gSkjMW_card']") : null;
+          if (!target || typeof target.closest !== "function") return;
+          if (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable || target.closest("textarea, input, [contenteditable='true']")) return;
+          var card = target.closest(FILE_CARD_SELECTOR);
           if (card) {
+            if (card.hasAttribute("data-composer-card") || card.querySelector("textarea, input, [contenteditable='true']")) return;
             // 如果点击的是卡片内的移除按钮（如 close 图标），不激活拖拽
-            if (target && (target.tagName === "BUTTON" || target.closest("button"))) return;
+            if (target.tagName === "BUTTON" || target.closest("button")) return;
             if (!card.getAttribute("draggable")) card.setAttribute("draggable", "true");
           }
         } catch (eMd) { /* ignore */ }
-      }, true);
+      };
+      document.addEventListener("mousedown", onMouseDown, true);
 
       // 2. 拖拽开始时自动匹配并挂载 File 传输数据
-      document.addEventListener("dragstart", function (e) {
+      var onDragStart = function (e) {
         try {
           var target = e.target;
-          var card = target && target.closest ? target.closest("[data-dsh-easyrewrite-file-card], .dsh-easyrewrite-file-card, [data-easyrewrite-file-card], [data-easyrewrite-img-card], div[class*='gSkjMW_card']") : null;
-          if (!card) return;
+          var card = target && target.closest ? target.closest(FILE_CARD_SELECTOR) : null;
+          if (!card || card.hasAttribute("data-composer-card")) return;
 
           var name = card.getAttribute("title") || "";
           if (!name) {
@@ -82,11 +98,19 @@ import { cachedRebuiltFiles, setDraggedAttachment, clearDraggedAttachment } from
             }
           }
         } catch (eDs) { /* ignore */ }
-      }, true);
+      };
+      document.addEventListener("dragstart", onDragStart, true);
 
-      document.addEventListener("dragend", function () {
+      var onDragEnd = function () {
         clearDraggedAttachment();
-      }, true);
+      };
+      document.addEventListener("dragend", onDragEnd, true);
+
+      window.__dshEasyRewriteCardDragDispose = function () {
+        document.removeEventListener("mousedown", onMouseDown, true);
+        document.removeEventListener("dragstart", onDragStart, true);
+        document.removeEventListener("dragend", onDragEnd, true);
+      };
     }
 
     function injectThemeStyle() {

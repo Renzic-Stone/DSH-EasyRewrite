@@ -154,6 +154,9 @@ export function registerBubble(ctx) {
 
   return () => {
     for (let i = 0; i < disposers.length; i++) disposers[i]();
+    if (typeof window !== "undefined" && typeof window.__dshEasyRewriteCardDragDispose === "function") {
+      try { window.__dshEasyRewriteCardDragDispose(); } catch (e) {}
+    }
     if (styleTag && styleTag.parentNode) styleTag.parentNode.removeChild(styleTag);
   };
 }

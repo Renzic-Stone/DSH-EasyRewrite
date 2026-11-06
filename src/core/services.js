@@ -66,6 +66,17 @@ export function setServiceRefs(ctx) {
   } catch (e) {}
 }
 
+export function clearServiceRefs() {
+  serviceRefs.ctx = null;
+  serviceRefs.conversation = null;
+  serviceRefs.uiConversation = null;
+  serviceRefs.uiWorkspace = null;
+  serviceRefs.sessions = null;
+  serviceRefs.workspaces = null;
+  serviceRefs.locale = null;
+  serviceRefs.modelDirectories = null;
+}
+
 /** 图片 URL 解析双宿主兼容——props.loadImage / rc.2 resolveImage / rc.1 uiConversation.imageUrl */
 export async function resolveImageCompat(sessionId, ref, props) {
   if (props && typeof props.loadImage === "function") {
@@ -95,6 +106,43 @@ export async function resolveImageCompat(sessionId, ref, props) {
 }
 
 const attachmentFileCache = new Map();
+const MAX_ATTACHMENT_CACHE_ITEMS = 32;
+const MAX_ATTACHMENT_CACHE_BYTES = 64 * 1024 * 1024; // 64MB 上限防止长期运行跨会话累积 File 内存泄漏
+let attachmentFileCacheBytes = 0;
+
+function getCachedAttachmentFile(key) {
+  if (!key || !attachmentFileCache.has(key)) return null;
+  const entry = attachmentFileCache.get(key);
+  // LRU 刷新：移到末尾
+  attachmentFileCache.delete(key);
+  attachmentFileCache.set(key, entry);
+  return entry && entry.file instanceof File ? entry.file : null;
+}
+
+function setCachedAttachmentFile(key, file) {
+  if (!key || !(file instanceof File)) return;
+  const fileSize = typeof file.size === "number" && file.size > 0 ? file.size : 0;
+  // 超大单文件（>32MB）不入驻长效内存池
+  if (fileSize > 32 * 1024 * 1024) return;
+  if (attachmentFileCache.has(key)) {
+    const prev = attachmentFileCache.get(key);
+    attachmentFileCacheBytes -= (prev && prev.size) || 0;
+    attachmentFileCache.delete(key);
+  }
+  while (
+    attachmentFileCache.size >= MAX_ATTACHMENT_CACHE_ITEMS ||
+    (attachmentFileCache.size > 0 && attachmentFileCacheBytes + fileSize > MAX_ATTACHMENT_CACHE_BYTES)
+  ) {
+    const oldestKey = attachmentFileCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    const oldest = attachmentFileCache.get(oldestKey);
+    attachmentFileCacheBytes -= (oldest && oldest.size) || 0;
+    attachmentFileCache.delete(oldestKey);
+  }
+  if (attachmentFileCacheBytes < 0) attachmentFileCacheBytes = 0;
+  attachmentFileCache.set(key, { file, size: fileSize });
+  attachmentFileCacheBytes += fileSize;
+}
 
 export function isImageFileName(filename) {
   if (!filename || typeof filename !== "string") return false;
@@ -168,8 +216,8 @@ export async function resolveAttachmentFile(sessionId, att, props) {
 
   // 2. 命中内存级 File 缓存或官方草稿池（避免二次气泡编辑、刷新恢复或快速确定时丢失 File）
   var cacheKey = attId ? (attId + "::" + name) : "";
-  if (cacheKey && attachmentFileCache.has(cacheKey)) {
-    var cached = attachmentFileCache.get(cacheKey);
+  if (cacheKey) {
+    var cached = getCachedAttachmentFile(cacheKey);
     if (cached instanceof File) return cached;
   }
   try {
@@ -186,7 +234,7 @@ export async function resolveAttachmentFile(sessionId, att, props) {
       if (dResp.ok) {
         var dBlob = await dResp.blob();
         var dFile = new File([dBlob], name, { type: type || dBlob.type || (isFileKind ? "application/octet-stream" : "image/png") });
-        if (cacheKey) attachmentFileCache.set(cacheKey, dFile);
+        if (cacheKey) setCachedAttachmentFile(cacheKey, dFile);
         return dFile;
       }
     } catch (eDu) { /* ignore */ }
@@ -220,14 +268,14 @@ export async function resolveAttachmentFile(sessionId, att, props) {
       }
       if (res instanceof Uint8Array && res.byteLength > 0) {
         var f0 = new File([res], name, { type: type || (isFileKind ? "application/octet-stream" : "image/png") });
-        if (cacheKey) attachmentFileCache.set(cacheKey, f0);
+        if (cacheKey) setCachedAttachmentFile(cacheKey, f0);
         return f0;
       }
       if (res && res.ok && res.value && res.value.data) {
         var u8 = Uint8Array.from(res.value.data);
         var mType = (res.value.attachment && res.value.attachment.mediaType) || type || (isFileKind ? "application/octet-stream" : "image/png");
         var f1 = new File([u8], name, { type: mType });
-        if (cacheKey) attachmentFileCache.set(cacheKey, f1);
+        if (cacheKey) setCachedAttachmentFile(cacheKey, f1);
         return f1;
       }
     }
@@ -242,7 +290,7 @@ export async function resolveAttachmentFile(sessionId, att, props) {
         if (resp.ok) {
           var blob = await resp.blob();
           var f2 = new File([blob], name, { type: type || blob.type || "image/png" });
-          if (cacheKey) attachmentFileCache.set(cacheKey, f2);
+          if (cacheKey) setCachedAttachmentFile(cacheKey, f2);
           return f2;
         }
       }
@@ -261,7 +309,7 @@ export async function resolveAttachmentFile(sessionId, att, props) {
         var rawBlob = await rawResp.blob();
         var finalType = type || (isFileKind ? "application/octet-stream" : "image/png");
         var f3 = new File([rawBlob], name, { type: finalType });
-        if (cacheKey) attachmentFileCache.set(cacheKey, f3);
+        if (cacheKey) setCachedAttachmentFile(cacheKey, f3);
         return f3;
       }
     } catch (eRaw) {

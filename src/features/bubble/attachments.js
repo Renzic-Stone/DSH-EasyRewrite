@@ -3,10 +3,38 @@ import { serviceRefs, resolveImageCompat, resolveAttachmentFile, createDraftImag
 
 // ---------- 图片桥接（review #3）：跨会话传递交官方全局 draftAttachments 单例，只记 imageIds ----------
 export const pendingAttachIds = [];
-export const cachedEditMsg = {}; // 消息图refs缓存（渲染时填充，confirmEdit 异步回调读取）
+export const cachedEditMsg = {}; // 消息图refs缓存（渲染时填充，confirmEdit 异步回调读取，上限 150 条）
 export const latestInputImageIds = []; // 输入框当前图 id 镜像
-export const cachedRebuiltFiles = {}; // 会话图文件缓存（rebuildDraftAttachments 填充）
-export const stagedSessionFiles = new Map(); // 跨会话暂存文件池：targetSessionId -> File[]
+export const cachedRebuiltFiles = {}; // 会话图文件缓存（rebuildDraftAttachments 填充，上限 8 个会话）
+export const stagedSessionFiles = new Map(); // 跨会话暂存文件池：targetSessionId -> File[]（上限 12 个会话）
+
+function setBoundedObjectKey(obj, key, val, maxKeys) {
+  if (!obj || !key) return;
+  if (Object.prototype.hasOwnProperty.call(obj, key)) {
+    delete obj[key];
+  }
+  const keys = Object.keys(obj);
+  while (keys.length >= maxKeys) {
+    const oldest = keys.shift();
+    if (oldest !== undefined) delete obj[oldest];
+  }
+  obj[key] = val;
+}
+
+function setBoundedMapEntry(map, key, val, maxEntries) {
+  if (!map || !key) return;
+  if (map.has(key)) map.delete(key);
+  while (map.size >= maxEntries) {
+    const oldestKey = map.keys().next().value;
+    if (oldestKey === undefined) break;
+    map.delete(oldestKey);
+  }
+  map.set(key, val);
+}
+
+export function setCachedEditMsg(key, val) {
+  setBoundedObjectKey(cachedEditMsg, key, val, 150);
+}
 
 // ---------- 文件/图片卡片拖拽与全局传输流转管理器 ----------
 let currentDraggedAttachment = null;
@@ -98,7 +126,7 @@ export function handleAttachmentDragEnd(e) {
           } catch (e) { log("warn", "attach", "重建单个附件失败", { attachmentId: ref.attachmentId, err: String(e && e.message ? e.message : e) }); }
         }
         if (files.length > 0) {
-          if (sessionId) cachedRebuiltFiles[sessionId] = files.slice();
+          if (sessionId) setBoundedObjectKey(cachedRebuiltFiles, sessionId, files.slice(), 8);
           // 优先尝试官方通用附件直注接口 addFiles（DSH 0.2+ 标准）
           var ia = props && props.inputActions;
           if (ia && typeof ia.addFiles === "function") {
@@ -169,7 +197,7 @@ export function collectOutgoingFiles(sessionId, inputState) {
 /** 将收集到的 File 列表暂存给目标新会话（用于气泡消息重发） */
 export function stageOutgoingFiles(targetSessionId, files) {
   if (!targetSessionId || !Array.isArray(files) || files.length === 0) return;
-  stagedSessionFiles.set(targetSessionId, files.slice());
+  setBoundedMapEntry(stagedSessionFiles, targetSessionId, files.slice(), 12);
   log("info", "attach", "已为新会话暂存发送文件", { targetSessionId: targetSessionId, count: files.length });
 }
 
@@ -186,7 +214,7 @@ export const stagedBottomDraftFiles = new Map(); // targetSessionId -> File[]
 
 export function stageBottomDraftFiles(targetSessionId, files) {
   if (!targetSessionId || !Array.isArray(files) || files.length === 0) return;
-  stagedBottomDraftFiles.set(targetSessionId, files.slice());
+  setBoundedMapEntry(stagedBottomDraftFiles, targetSessionId, files.slice(), 12);
   log("info", "attach", "已为新会话暂存底部草稿文件", { targetSessionId: targetSessionId, count: files.length });
 }
 
@@ -203,7 +231,7 @@ export const stagedRecallOriginalFiles = new Map(); // sessionId -> File[]
 export function stageRecallOriginalFiles(sessionId, files) {
   if (!sessionId) return;
   if (Array.isArray(files) && files.length > 0) {
-    stagedRecallOriginalFiles.set(sessionId, files.slice());
+    setBoundedMapEntry(stagedRecallOriginalFiles, sessionId, files.slice(), 12);
     log("info", "attach", "已暂存撤回前输入框原生草稿文件", { sessionId: sessionId, count: files.length });
   } else {
     stagedRecallOriginalFiles.delete(sessionId);

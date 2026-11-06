@@ -1,5 +1,5 @@
 import * as React from "react";
-import { setServiceRefs } from "./core/services.js";
+import { setServiceRefs, clearServiceRefs } from "./core/services.js";
 import { setLocaleService } from "./core/i18n.js";
 import { log } from "./core/log.js";
 import { NS } from "./core/constants.js";
@@ -137,41 +137,6 @@ function apply(ctx) {
             try { style.remove(); } catch (e) {}
           });
         }
-
-        // 样式已通过纯 CSS [data-plugin-row*="..."] 100% 覆盖根行隐藏与模块标签品牌化。
-        // 为极致安全与性能，JS 辅助仅做单次轻量防抖兜底，严禁在 MutationObserver 中修改 textContent 防止死循环卡死
-        if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
-          let rAfId = null;
-          const safePolish = () => {
-            if (rAfId !== null) return;
-            rAfId = requestAnimationFrame(() => {
-              rAfId = null;
-              try {
-                // 仅扫描未标记过的根行进行 CSS 补充兜底，处理后立即打标，绝对单次执行与零重入
-                const unhandled = document.querySelectorAll('li[data-plugin-row*="dsh-easyrewrite"]:not([data-dsh-done])');
-                for (let i = 0; i < unhandled.length; i++) {
-                  const li = unhandled[i];
-                  li.setAttribute("data-dsh-done", "1");
-                  const attr = (li.getAttribute("data-plugin-row") || "").toLowerCase();
-                  const isSub = attr.includes("bubble") || attr.includes("recall") || attr.includes("history") || attr.includes("other");
-                  if (!isSub) {
-                    li.style.setProperty("display", "none", "important");
-                  }
-                }
-              } catch (e) {}
-            });
-          };
-
-          safePolish();
-          const obs = new MutationObserver(() => safePolish());
-          if (document.body) {
-            obs.observe(document.body, { childList: true, subtree: true });
-            disposers.push(() => {
-              try { obs.disconnect(); } catch (e) {}
-              if (rAfId !== null) cancelAnimationFrame(rAfId);
-            });
-          }
-        }
       } catch (e) {}
     });
 
@@ -235,6 +200,7 @@ function apply(ctx) {
           if (typeof disposers[i] === "function") disposers[i]();
         } catch (e) {}
       }
+      clearServiceRefs();
       log("info", "lifecycle", "client half unloaded");
     };
   }, "dsh-easyrewrite: modular client bundle");

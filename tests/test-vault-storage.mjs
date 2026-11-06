@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -362,6 +363,137 @@ try {
   console.log('✓ 多帧 Zstd 解析、Header ID 重写与物理进出仓验证全部通过');
 } finally {
   await rm(mockMultiFrameHome, { recursive: true, force: true }).catch(() => {});
+  if (oldHome) process.env.DSH_HOME = oldHome;
+  else delete process.env.DSH_HOME;
+}
+
+// =========================================================================
+// [Test 7] Issue #23 / #24 / #25 专项回归测试：
+//   1. 500 帧拼接 Zstd 零重复解压 + 跨帧 UTF-8 多字节字符完整性 (#23 & #25)
+//   2. vault-config.json 的 archivedMigrated 完成标记持久化与二次启动短路 (#23)
+//   3. 侧边栏活跃单节点会话（含 turnStartCount === 0 旧格式或空白新会话）防误删保护 (#23)
+//   4. 前端文件拖拽选择器精确限定 FileCard，杜绝污染输入框 [data-composer-card] (#24)
+// =========================================================================
+console.log('[Test 7] Issue #23 / #24 / #25 专项回归验证...');
+const mockIssueHome = join(tmpdir(), 'dsh-issue23-25-test-' + Date.now());
+process.env.DSH_HOME = mockIssueHome;
+
+try {
+  const { decompressZstdFrames } = __test;
+
+  // 7.1 500 帧拼接 Zstd 测试（防 O(F^2) 重复后缀解压）
+  const frameCount = 500;
+  const expectedLines = [];
+  const frameBuffers = [];
+  for (let i = 0; i < frameCount; i++) {
+    const line = JSON.stringify({ seq: i, text: 'FrameLine_' + i });
+    expectedLines.push(line);
+    frameBuffers.push(zstdCompressSync(Buffer.from(line + '\n', 'utf8')));
+  }
+  const concat500 = Buffer.concat(frameBuffers);
+  const t0 = performance.now();
+  const decoded500 = decompressZstdFrames(concat500);
+  const elapsedMs = performance.now() - t0;
+  const actualLines = decoded500.trim().split('\n');
+  assert.equal(actualLines.length, frameCount, '500 帧拼接 Zstd 解压后行数必须严格为 500，绝不能重复膨胀');
+  assert.deepEqual(actualLines, expectedLines, '500 帧解压内容顺序与预期必须 100% 一致');
+  assert.ok(elapsedMs < 500, '500 帧解压耗时应处于毫秒级: ' + elapsedMs.toFixed(2) + 'ms');
+
+  // 7.2 跨帧拆分 UTF-8 多字节字符测试
+  const utf8Raw = Buffer.from('你好，EasyRewrite 跨帧多字节测试！\n', 'utf8');
+  // 故意在一个 3 字节汉字的中间（第 4 字节处）切开成两个独立 Zstd 帧
+  const part1 = zstdCompressSync(utf8Raw.subarray(0, 4));
+  const part2 = zstdCompressSync(utf8Raw.subarray(4));
+  const decodedUtf8 = decompressZstdFrames(Buffer.concat([part1, part2]));
+  assert.equal(decodedUtf8, '你好，EasyRewrite 跨帧多字节测试！\n', '跨帧拆分的 UTF-8 多字节字符必须无损还原');
+
+  // 7.3 归档迁移完成标记持久化、二次启动短路与侧边栏单节点防误删保护
+  const storagesDir = join(mockIssueHome, 'storages');
+  const sessionsDir = join(mockIssueHome, 'sessions', 'ws-protect');
+  await mkdir(storagesDir, { recursive: true });
+  await mkdir(sessionsDir, { recursive: true });
+
+  // 创建一个在侧边栏 sessionIds 中可见、但没有 turn/start 的单节点会话（模拟旧格式或新建会话）
+  const activeSingleSid = 'session-active-no-turnstart';
+  const activeSingleDir = join(sessionsDir, activeSingleSid);
+  await mkdir(activeSingleDir, { recursive: true });
+  const activeSingleContent = [
+    JSON.stringify({ type: 'session', id: activeSingleSid }),
+    JSON.stringify({ type: 'custom/legacy-event', data: { text: '没有 turn/start 的有效侧边栏会话' } })
+  ].join('\n') + '\n';
+  await writeFile(join(activeSingleDir, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(activeSingleContent)));
+
+  const wsJsonPath = join(storagesDir, 'workspace.json');
+  await writeFile(wsJsonPath, JSON.stringify({
+    global: { archivedSessionIds: [] },
+    tables: {
+      workspaces: {
+        'ws-protect': {
+          sessionIds: [activeSingleSid]
+        }
+      }
+    }
+  }, null, 2), 'utf8');
+
+  const mockCtx = { get: () => null };
+  // 首次非强制启动迁移
+  const firstRun = await migrateArchivedSessionsInternal(mockCtx, false);
+  assert.ok(firstRun.ok && !firstRun.skipped, '首次启动迁移应正常执行完成');
+
+  // 验证侧边栏单节点会话绝未被误删
+  assert.ok(existsSync(activeSingleDir), '侧边栏可见的单节点会话目录绝不能被误删');
+  const wsAfterFirst = JSON.parse(await readFile(wsJsonPath, 'utf8'));
+  assert.deepEqual(wsAfterFirst.tables.workspaces['ws-protect'].sessionIds, [activeSingleSid], '侧边栏 sessionIds 必须完整保留');
+
+  // 验证 vault-config.json 已持久化 archivedMigrated: true，且单独修改 storageMode 不会冲掉该标记
+  const cfgAfterFirst = await readVaultConfig();
+  assert.equal(cfgAfterFirst.archivedMigrated, true, 'readVaultConfig 必须读出 archivedMigrated === true');
+  assert.equal(typeof cfgAfterFirst.migratedAt, 'number', 'readVaultConfig 必须读出 migratedAt 时间戳');
+  await writeVaultConfig({ storageMode: 'workspace' });
+  const cfgAfterModeChange = await readVaultConfig();
+  assert.equal(cfgAfterModeChange.storageMode, 'workspace', 'storageMode 应更新为 workspace');
+  assert.equal(cfgAfterModeChange.archivedMigrated, true, '更新 storageMode 绝不能丢失 archivedMigrated 标记');
+
+  // 二次启动调用 migrateArchivedSessionsInternal(ctx, false) 必须立即短路跳过
+  const secondRun = await migrateArchivedSessionsInternal(mockCtx, false);
+  assert.equal(secondRun.skipped, true, '二次启动必须命中 already-migrated 短路跳过');
+  assert.equal(secondRun.reason, 'already-migrated', '跳过原因应为 already-migrated');
+
+  // 7.4 验证前端打包产物 lib/client.js 已修复 Issue #24 选择器污染与内存上限守卫
+  const clientCode = await readFile(join(process.cwd(), 'lib', 'client.js'), 'utf8');
+  assert.ok(clientCode.includes("[class*='_card'][class*='FileCard']"), 'client.js 必须使用精确的 FileCard 选择器');
+  assert.ok(!clientCode.includes("[data-easyrewrite-img-card], [class*='_card'],"), 'client.js 绝不能再包含裸的 [class*=_card] 选择器');
+  assert.ok(clientCode.includes('data-composer-card'), 'client.js 必须包含输入框卡片排除保护');
+  assert.ok(clientCode.includes('MAX_ATTACHMENT_CACHE_BYTES'), 'client.js 必须包含附件缓存容量上限保护');
+  assert.ok(clientCode.includes('revokeTrackedObjectUrls'), 'client.js 必须包含编辑态预览 Blob URL 自动释放保护');
+
+  // 7.5 验证局部切片读取、帧数预算控制与尾部闭合检测（杜绝大文件全量解压 OOM）
+  const { readFileSlice, isLastTurnClosedInZstdFile } = __test;
+  const budgetDecoded = decompressZstdFrames(concat500, { maxFrames: 3 });
+  assert.equal(budgetDecoded.trim().split('\n').length, 3, 'maxFrames: 3 预算控制必须严格只解压前 3 帧即提前终止');
+
+  const closedSessionPath = join(sessionsDir, 'closed-check.jsonl.zstd');
+  const openTurnBuf = Buffer.concat([
+    zstdCompressSync(Buffer.from(JSON.stringify({ type: 'session', id: 's-1' }) + '\n')),
+    zstdCompressSync(Buffer.from(JSON.stringify({ type: 'turn/start', seq: 1 }) + '\n'))
+  ]);
+  await writeFile(closedSessionPath, openTurnBuf);
+  assert.equal(await isLastTurnClosedInZstdFile(closedSessionPath), false, '未闭合回合尾部检测应返回 false');
+
+  const closedTurnBuf = Buffer.concat([
+    openTurnBuf,
+    zstdCompressSync(Buffer.from(JSON.stringify({ type: 'turn/end', seq: 2 }) + '\n'))
+  ]);
+  await writeFile(closedSessionPath, closedTurnBuf);
+  assert.equal(await isLastTurnClosedInZstdFile(closedSessionPath), true, '已闭合回合尾部检测应返回 true');
+
+  const tailSlice = await readFileSlice(closedSessionPath, 32, true);
+  assert.equal(tailSlice.buf.length, 32, 'readFileSlice 尾部切片长度应精确受限于 maxBytes');
+  assert.equal(tailSlice.truncated, true, '大文件切片应标记 truncated === true');
+
+  console.log('✓ Issue #23 / #24 / #25 专项回归验证与架构内存安全守卫全部通过');
+} finally {
+  await rm(mockIssueHome, { recursive: true, force: true }).catch(() => {});
   if (oldHome) process.env.DSH_HOME = oldHome;
   else delete process.env.DSH_HOME;
 }

@@ -24,7 +24,7 @@ import { editWidthFor, editWidthMode, editWidthCustom, calcBtnRowMinWidth } from
 import { fileToDataUrl, dataUrlToFile } from "./image-utils.js";
 import {
   pendingAttachIds,
-  cachedEditMsg,
+  cachedEditMsg, setCachedEditMsg,
   latestInputImageIds, setLatestInputImageIds,
   rebuildDraftAttachments,
   stageOutgoingFiles,
@@ -167,6 +167,40 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var dzWatchdogRef = React.useRef(0);   // 拖拽事件流中断兜底（2.5s 无事件自动复位，防卡死）
       var stagedBottomImageIdsRef = React.useRef([]); // 气泡编辑期间拖入底部输入框的暂存图片 ID 列表
       var stagedBottomFilesRef = React.useRef([]);    // 气泡编辑期间拖入底部输入框的暂存 File 实体列表（跨会话保留）
+      var createdBlobUrlsRef = React.useRef([]);      // 编辑态内自建的临时预览 blob: URL 集合，退出编辑或卸载时统一 revoke 防止内存泄漏
+
+      function createTrackedObjectUrl(file) {
+        if (!file || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+        try {
+          var u = URL.createObjectURL(file);
+          if (u) createdBlobUrlsRef.current.push(u);
+          return u;
+        } catch (e) {
+          return "";
+        }
+      }
+
+      function revokeTrackedObjectUrls() {
+        var urls = createdBlobUrlsRef.current;
+        if (!urls || urls.length === 0) return;
+        createdBlobUrlsRef.current = [];
+        for (var ui = 0; ui < urls.length; ui++) {
+          try {
+            if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+              URL.revokeObjectURL(urls[ui]);
+            }
+          } catch (e) {}
+        }
+      }
+
+      React.useEffect(function () {
+        if (!editing) {
+          revokeTrackedObjectUrls();
+        }
+        return function () {
+          revokeTrackedObjectUrls();
+        };
+      }, [editing]);
       /** 把当前编辑图片/文件集合同步进 pending（含 dataUrl 字节快照；超限降级只丢字节、引用仍在） */
       function syncEditImgsToPending(items) {
         try {
@@ -247,8 +281,11 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                 var sD = createDraftImagesCompat([sFile], sessionId);
                 if (sD && sD.length > 0) {
                   restoreInitItems.push({ id: sD[0].id, url: sD[0].previewUrl, dataUrl: sv.dataUrl, file: sFile, isFile: false });
-                } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
-                  restoreInitItems.push({ id: sv.id || ("img-restored-" + si), url: URL.createObjectURL(sFile), dataUrl: sv.dataUrl, file: sFile, isFile: false });
+                } else {
+                  var rBlobUrl1 = createTrackedObjectUrl(sFile);
+                  if (rBlobUrl1) {
+                    restoreInitItems.push({ id: sv.id || ("img-restored-" + si), url: rBlobUrl1, dataUrl: sv.dataUrl, file: sFile, isFile: false });
+                  }
                 }
               }
             } catch (eRa) { log("warn", "edit", "恢复拖入图/文件失败", { err: String(eRa && eRa.message ? eRa.message : eRa) }); }
@@ -269,8 +306,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                     var rDrafts = createDraftImagesCompat([rResolved], sessionId);
                     if (rDrafts && rDrafts.length > 0 && rDrafts[0].previewUrl) {
                       rPreview = rDrafts[0].previewUrl;
-                    } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
-                      rPreview = URL.createObjectURL(rResolved);
+                    } else {
+                      rPreview = createTrackedObjectUrl(rResolved);
                     }
                   } else if (rCur.attachment) {
                     var rUrlFallback = await resolveImageCompat(sessionId, rCur.attachment, props);
@@ -692,7 +729,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
             });
           }
         }
-        if (_arC.length > 0) cachedEditMsg[myKey] = { seq: (data && typeof data.seq === "number") ? data.seq : anchorSeq, attachRefs: _arC };
+        if (_arC.length > 0) setCachedEditMsg(myKey, { seq: (data && typeof data.seq === "number") ? data.seq : anchorSeq, attachRefs: _arC });
       }
 
 
@@ -865,8 +902,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
                       var dList = createDraftImagesCompat([resolvedFile], sessionId);
                       if (dList && dList.length > 0 && dList[0].previewUrl) {
                         previewUrl = dList[0].previewUrl;
-                      } else if (typeof URL !== "undefined" && typeof URL.createObjectURL === "function") {
-                        previewUrl = URL.createObjectURL(resolvedFile);
+                      } else {
+                        previewUrl = createTrackedObjectUrl(resolvedFile);
                       }
                     } else {
                       var fallbackUrl = await resolveImageCompat(sessionId, curItem.attachment, props);
@@ -901,10 +938,10 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
         setEditing(false);
         log("info", "edit", "编辑取消（原样不变）");
       }
-      var editInFlight = false; // review M2：编辑重发并发锁
+      var editInFlightRef = React.useRef(false); // review M2：跨重渲染稳定的编辑重发并发锁
       async function confirmEdit() {
-        if (editInFlight) return;
-        editInFlight = true;
+        if (editInFlightRef.current) return;
+        editInFlightRef.current = true;
         setPrimaryButtonSendingState(true);
         try {
           // 惰性提交：编辑的「确定」= 真正修改点（与撤回的「发送」等价）——截断重发
@@ -1082,7 +1119,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
           setPrimaryButtonSendingState(false);
           setEditing(true); // 网络异常也恢复编辑态
         } finally {
-          editInFlight = false;
+          editInFlightRef.current = false;
         }
       }
       function onBubbleClick(e) {

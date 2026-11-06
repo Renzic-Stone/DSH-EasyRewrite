@@ -3,6 +3,33 @@
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 
+## [3.0.1] — 2026-11-07 — 启动期高吞吐加固 · 内存防暴涨与全链路切片解压 · 输入框光标拖拽隔离
+
+### 🐛 缺陷修复 & 架构加固
+- **【核心稳定性】消除启动卡死与配置持久化短路，守护活跃会话（解决 Issue #23，特别鸣谢 @0-v-0 反馈！）**：
+  - **迁移状态安全固化**：修复 `readVaultConfig` / `writeVaultConfig` 读写过程中遗漏 `archivedMigrated` 标记的缺陷，防止已完成迁移的工作区在重启后重复扫描大盘；引入 `_migrationInFlight` 保证单飞执行，杜绝并发重入；
+  - **严密保护活跃会话**：在 `scanZstdSessionFile` 中引入 `activeSessionSet` 活跃白名单，即便会话帧较短或无有效轮次，只要其存在于侧边栏或活跃工作区，严禁误判为无用单节点会话而执行误删；
+  - **主线程切片让出**：对大体量历史会话扫描循环增加微任务切片（每扫描 15 个会话主动调用 `setImmediate` 让出 Node.js 事件循环），彻底消除大工程启动时 DSH 界面假死或“未响应”现象。
+
+- **【交互隔离】精准限定文件卡片选择器，彻底根除输入框文字拖拽污染（解决 Issue #24，特别鸣谢 @Livxx 反馈！）**：
+  - **选择器边界严格收敛**：将原有模糊选择器 `[class*='_card']` 收敛为精准复合类名 `[class*='_card'][class*='FileCard']`，并增加多重防护，显式排除 `[data-composer-card]` 容器、`textarea` 与 `input` 原生编辑元素；
+  - **生命周期彻底解绑**：增加组件卸载与非文件卡片元素上的残留属性自洁机制，防止非预期的卡片拖拽与光标选中文本事件穿透，彻底恢复在输入框内自由选区、拖动移动光标等原生编辑体验。
+
+- **【深度内存防御】Zstd 多帧拼接无重复解压，消除大文件 V8 OOM 隐患（解决 Issue #25，特别鸣谢 @YesSanSan 反馈！）**：
+  - **多帧解压零冗余开销**：在 `lib/index.js` 增加 `_ZSTD_NATIVE_MULTI_FRAME` 运行时自检；Node 26+ 下原生单次流式解压消除 $O(F^2)$ 重复前缀解压；在 Node 22/24 下通过精确 Magic Header 边界切分与帧合并还原，杜绝内存瞬时峰值；
+  - **母串切片解毒（V8 SlicedString Flatten）**：对所有会话解压帧提取的关键字段调用 `flattenStr` 触发底层的扁平化驻留，消除 V8 引擎对于子字符串母串引用的长期滞留持有。
+
+- **【系统架构级加固】全链路资源节制与 DOM/定时器生命周期规范化**：
+  - **按需切片读取与尾部判定**：实现 `readFileSlice` 按需读取与 `decompressZstdFrames` 的 `maxFrames` / `maxOutputBytes` 预算限制；尾部闭合检测 `isLastTurnClosedInZstdFile` 仅嗅探尾部 64KB，超大文件无需全量解压即可完成状态闭合校验；
+  - **前端多级缓存 LRU 上限**：`attachmentFileCache` 引入 32 项 / 64MB LRU 硬上限，限制单文件 >32MB 不入池；`cachedEditMsg`（150条）、`cachedRebuiltFiles`（8个会话）、暂存文件 Map（12个会话）增加容量淘汰；
+  - **DOM 监听与 Blob URL 释放**：彻底移除挂载在 `document.body` 上的全局全树 `MutationObserver`；引入 `createTrackedObjectUrl` / `revokeTrackedObjectUrls` 确保气泡编辑态产生的临时预览 Blob URL 100% 及时回收；规范撤回横幅上的 `resize` 监听与异步定时器生命周期清理。
+
+### 致谢（Special Thanks）
+- ❤️ 特别鸣谢 **@0-v-0**（Issue #23）：精准反馈了大规模工程下插件启动阶段的性能瓶颈与配置持久化短路问题，帮助我们完成了启动吞吐机制的蜕变！
+- ❤️ 特别鸣谢 **@Livxx**（Issue #24）：以极高的细致度指出了输入框选中文本拖拽时的光标阻塞缺陷，促成了 DOM 选择器的严谨收敛！
+- ❤️ 特别鸣谢 **@YesSanSan**（Issue #25）：提供了详尽的超长历史会话解压堆栈与性能分析，推动了 Zstd 多帧切片解压算法的全面升级！
+
+
 ## [3.0.0] — 2026-11-03 — 影子仓储（Vault）降临 · 附件全域无损流转 · 彻底消除侧栏污染
 
 ### 🚀 重大重构 & 新特性

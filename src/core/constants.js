@@ -1,6 +1,6 @@
 export const NS = "dsh-easyrewrite";
 
-export const CURRENT_VERSION = "3.0.0";
+export const CURRENT_VERSION = "3.0.1";
 export const MIN_DSH_VERSION = "0.1.2-rc.1";
 export const MAX_TESTED_DSH_VERSION = "0.2.5";
 
