@@ -1,8 +1,8 @@
 import * as React from "react";
 import { setServiceRefs, clearServiceRefs } from "./core/services.js";
-import { setLocaleService } from "./core/i18n.js";
+import { setLocaleService, SETTINGS_I18N } from "./core/i18n.js";
 import { log } from "./core/log.js";
-import { NS } from "./core/constants.js";
+import { CURRENT_VERSION, NS } from "./core/constants.js";
 import { invokeOpenSession } from "./core/session.js";
 import { BundleConfigPage, initAutoUpdateCheck } from "./features/bundle-config/index.js";
 import { registerBubble } from "./features/bubble/index.js";
@@ -35,12 +35,12 @@ function apply(ctx) {
       if (ctx && ctx.locale) setLocaleService(ctx.locale);
       try {
         if (typeof ctx.locale === "object" && ctx.locale !== null && typeof ctx.locale.register === "function") {
-          ctx.locale.register(NS, {});
+          ctx.locale.register(NS, { zh: SETTINGS_I18N.zh, en: SETTINGS_I18N.en, ja: SETTINGS_I18N.ja });
         }
       } catch (e) {}
     });
 
-    log("info", "lifecycle", "client half active (v3.0.0 modular architecture)");
+    log("info", "lifecycle", "client half active (v" + CURRENT_VERSION + " modular architecture)");
 
     // 每日自动检测更新静默触发
     safeRun("auto-update", () => {

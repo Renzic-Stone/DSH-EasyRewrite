@@ -211,11 +211,11 @@ import * as React from "react";
         vaultWorkspace: "Per-Workspace",
         vaultGlobalHint: "Stored in ~/.dsh/dsh-easyrewrite/EasyRewrited_Sessions/, centralized vault",
         vaultWorkspaceHint: "Stored in workspace's .easyrewrite_vault/EasyRewrited_Sessions/, isolated",
-        cleanLegacyArchived: "Clean Legacy Archived Sessions",
-        cleanLegacyArchivedHint: "Prune old archived session records in DSH 0.2 sidebar to avoid clutter",
-        cleaning: "Cleaning…",
-        cleanDone: "Cleanup done: pruned {n} zombie sessions from archive!",
-        cleanNone: "No legacy archived sessions found to clean"
+        cleanLegacyArchived: "Smart Migrate & Clean Legacy Archives",
+        cleanLegacyArchivedHint: "Safely convert legacy recall archives to shadow Vault, clean residual list while keeping user manual archives",
+        cleaning: "Migrating…",
+        cleanDone: "Smart migration complete: converted {n} historical versions into Vault, kept {r} user archives untouched!",
+        cleanNone: "All legacy archives are already in the new Vault format, no conversion needed"
       },
       ja: {
         title: "EasyRewrite",
@@ -319,11 +319,11 @@ import * as React from "react";
         vaultWorkspace: "ワークスペース個別",
         vaultGlobalHint: "~/.dsh/dsh-easyrewrite/EasyRewrited_Sessions/ に保存",
         vaultWorkspaceHint: "各ワークスペースの .easyrewrite_vault/EasyRewrited_Sessions/ に保存",
-        cleanLegacyArchived: "過去のアーカイブ履歴を一括クリーンアップ",
-        cleanLegacyArchivedHint: "DSH 0.2 のサイドバーに残る過去のアーカイブセッション記録を整理",
-        cleaning: "クリーンアップ中…",
-        cleanDone: "クリーンアップ完了：{n} 個のゾンビセッションを整理しました！",
-        cleanNone: "整理対象の過去アーカイブセッションは見つかりませんでした"
+        cleanLegacyArchived: "過去アーカイブのスマート移行と整理",
+        cleanLegacyArchivedHint: "過去の撤回アーカイブをVault形式へ安全に変換し、ユーザー手動アーカイブを保持したまま一覧を整理",
+        cleaning: "移行中…",
+        cleanDone: "スマート移行完了：{n} 件の履歴バージョンをVaultに変換し、{r} 件のユーザー手動アーカイブを保持しました！",
+        cleanNone: "すべての過去アーカイブは既に新Vault形式に移行済みです。再変換の必要はありません"
       }
     };
     function uiLang() {

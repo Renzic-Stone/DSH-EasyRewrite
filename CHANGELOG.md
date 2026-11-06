@@ -3,6 +3,7 @@
 本插件遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 与 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
 
+
 ## [3.0.1] — 2026-11-07 — 启动期高吞吐加固 · 内存防暴涨与全链路切片解压 · 输入框光标拖拽隔离
 
 ### 🐛 缺陷修复 & 架构加固
@@ -23,6 +24,7 @@
   - **按需切片读取与尾部判定**：实现 `readFileSlice` 按需读取与 `decompressZstdFrames` 的 `maxFrames` / `maxOutputBytes` 预算限制；尾部闭合检测 `isLastTurnClosedInZstdFile` 仅嗅探尾部 64KB，超大文件无需全量解压即可完成状态闭合校验；
   - **前端多级缓存 LRU 上限**：`attachmentFileCache` 引入 32 项 / 64MB LRU 硬上限，限制单文件 >32MB 不入池；`cachedEditMsg`（150条）、`cachedRebuiltFiles`（8个会话）、暂存文件 Map（12个会话）增加容量淘汰；
   - **DOM 监听与 Blob URL 释放**：彻底移除挂载在 `document.body` 上的全局全树 `MutationObserver`；引入 `createTrackedObjectUrl` / `revokeTrackedObjectUrls` 确保气泡编辑态产生的临时预览 Blob URL 100% 及时回收；规范撤回横幅上的 `resize` 监听与异步定时器生命周期清理。
+- **【多语言生态与契约】补全宿主 `ctx.locale.register` 注册与三语文档对齐**：修复客户端模块化拆分后向宿主 `ctx.locale.register` 注册空对象的遗留问题，完整接入 `{ zh, en, ja }` 三语词条；对齐英文与日文语言包中历史归档智能迁移文案；中/英/日三语 README 全面升级同步。
 
 ### 致谢（Special Thanks）
 - ❤️ 特别鸣谢 **@0-v-0**（Issue #23）：精准反馈了大规模工程下插件启动阶段的性能瓶颈与配置持久化短路问题，帮助我们完成了启动吞吐机制的蜕变！
