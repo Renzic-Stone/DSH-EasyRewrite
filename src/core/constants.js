@@ -1,6 +1,8 @@
+import { serviceRefs } from "./services.js";
+
 export const NS = "dsh-easyrewrite";
 
-export const CURRENT_VERSION = "3.0.1";
+export const CURRENT_VERSION = "3.1.0";
 export const MIN_DSH_VERSION = "0.1.2-rc.1";
 export const MAX_TESTED_DSH_VERSION = "0.2.5";
 
@@ -14,6 +16,7 @@ export const SETTING_KEYS = {
   debug: "dsh-easyrewrite:debug",
   shortcut: "dsh-easyrewrite:shortcut",
   pagerEnabled: "dsh-easyrewrite:pagerEnabled",
+  pagerConfirm: "dsh-easyrewrite:pagerConfirm",
   checkUpdateDaily: "dsh-easyrewrite:checkUpdateDaily",
   lastUpdateCheckTime: "dsh-easyrewrite:lastUpdateCheckTime",
   dismissedUpdateVersion: "dsh-easyrewrite:dismissedUpdateVersion",
@@ -89,6 +92,14 @@ export function recallConfirmEnabled() {
   return getBool(SETTING_KEYS.recallConfirm, true);
 }
 
+export function pagerEnabled() {
+  return getBool(SETTING_KEYS.pagerEnabled, true);
+}
+
+export function pagerConfirmEnabled() {
+  return getBool(SETTING_KEYS.pagerConfirm, true);
+}
+
 // ---------- 语义化版本比较（1.2.4 < 1.3.0；缺失段视为 0） ----------
 export function versionGt(a, b) {
   const pa = String(a || "0").split(".").map((x) => parseInt(x, 10) || 0);
@@ -124,20 +135,56 @@ export function cmpDsh(a, b) {
   return va.preNum - vb.preNum;
 }
 
-// ---------- 宿主会话快照读取兼容层（v2.4.0） ----------
-export function hasChatSnapshot(props) {
-  return !!(props && ((typeof props.useChat === "function") || (typeof props.useSession === "function")));
+// ---------- 宿主会话快照读取兼容层（v2.4.0） + 非 Hook 同步读写与签名隔离（v3.x） ----------
+export function hookSignatureKey(props, propNames) {
+  if (!props) return "empty";
+  return propNames.map((k) => (typeof props[k] === "function" ? k + ":1" : k + ":0")).join("|");
 }
 
-export function getChatSnapshot(props) {
+export function hasChatSnapshot(props) {
+  return !!(props && (
+    typeof props.useChat === "function" ||
+    typeof props.useSession === "function" ||
+    props._resolvedChatSnapshot ||
+    props.chatSnapshot
+  ));
+}
+
+/**
+ * 非 Hook 同步读取会话 ChatSnapshot（供事件回调 / helper 使用，严禁在回调内调 React Hook → React #321）。
+ */
+export function readChatSnapshotSync(sessionId, opts) {
+  const o = opts || {};
   try {
-    if (props && typeof props.useChat === "function") return props.useChat((s) => s);
-    if (props && typeof props.useSession === "function") {
-      const s = props.useSession((x) => x);
-      return s && s.chat ? s.chat : s;
+    const uiConv = o.uiConversation || serviceRefs.uiConversation;
+    const sessions = o.sessions || o.ctxSessions || serviceRefs.sessions;
+    if (uiConv && typeof uiConv.binding === "function" && sessions && typeof sessions.binding === "function" && sessionId) {
+      const sb = sessions.binding(sessionId);
+      if (sb) {
+        const convB = uiConv.binding(sb);
+        const chatTarget = convB && typeof convB.target === "function" ? convB.target("chat") : null;
+        if (chatTarget && typeof chatTarget.getSnapshot === "function") {
+          const snap = chatTarget.getSnapshot();
+          if (snap) return snap;
+        }
+      }
     }
-  } catch (eSnap) {
+  } catch (e) {
     /* ignore */
   }
-  return null;
+  return o.fallbackSnapshot || null;
+}
+
+/**
+ * 读取由外层 Hook Gate 预解析注入的 ChatSnapshot，或在未经过 Gate 时同步降级读取。
+ * 彻底移除函数体内条件/try-catch Hook 调用，消除 React #300/#310/#321 隐患。
+ */
+export function getChatSnapshot(props) {
+  if (!props) return null;
+  if (props._resolvedChatSnapshot !== undefined) return props._resolvedChatSnapshot;
+  if (props.chatSnapshot) return props.chatSnapshot;
+  return readChatSnapshotSync(props.sessionId, {
+    uiConversation: props.uiConversation,
+    sessions: props.ctxSessions
+  });
 }

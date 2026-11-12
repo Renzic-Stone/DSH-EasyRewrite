@@ -5,12 +5,24 @@ import { log } from "../../core/log.js";
 import { serviceRefs, getUiWorkspace } from "../../core/services.js";
 import { safeOpenSession } from "../recall/safe-session.js";
 import { familyOfSession } from "../../core/session.js";
-import { getChatSnapshot, hasChatSnapshot } from "../../core/constants.js";
+import { getChatSnapshot, hasChatSnapshot, pagerEnabled, pagerConfirmEnabled } from "../../core/constants.js";
+import { renderWithChatGate } from "../../core/hook-gates.js";
 import { extractText } from "../../core/ui.js";
 import { readPending, writePending } from "../recall/store.js";
 import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments.js";
 
-    function goToVersion(fam, sessionId, nextIndex, props, cleanupRef) {
+    function fmtShortVerTime(ts) {
+      if (!ts || typeof ts !== "number" || isNaN(ts)) return "";
+      try {
+        var d = new Date(ts);
+        var p = function (n) { return n < 10 ? "0" + n : String(n); };
+        return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+      } catch (e) {
+        return "";
+      }
+    }
+
+    function goToVersion(fam, sessionId, nextIndex, props) {
       var next = fam.versions[nextIndex];
       if (!next) return;
       log("info", "pager", "切换版本", { from: sessionId, to: next, index: nextIndex + 1, count: fam.versions.length });
@@ -25,36 +37,9 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
         }).catch(function () {});
       } catch (eVs) {}
 
+      // 安全打开目标兄弟会话，严禁调用会话退役接口将原主会话或原生 Fork 分支从侧栏删除（Issue #28 / dsh-sidenote 保护）
       var doOpen = function () {
         safeOpenSession(next, props);
-        // 等当前会话确认为 next（轮询 current，不猜时间）后，将家族其余版本移入影子仓储，彻底不再调用 archiveSession 污染侧栏
-        if (cleanupRef.current !== null) { clearInterval(cleanupRef.current); cleanupRef.current = null; }
-        var attempts = 0;
-        cleanupRef.current = setInterval(function () {
-          attempts++;
-          try {
-            var cur = typeof props.currentSessionId === "function" ? props.currentSessionId() : null;
-            if (cur === next) {
-              clearInterval(cleanupRef.current);
-              cleanupRef.current = null;
-              fam.versions.forEach(function (vid) {
-                if (vid !== next) {
-                  fetch("/bubble/vault/retire-session", {
-                    method: "POST",
-                    headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ sessionId: vid }),
-                    keepalive: true
-                  }).catch(function () {});
-                }
-              });
-              return;
-            }
-          } catch (e) { /* ignore */ }
-          if (attempts >= 40) {
-            clearInterval(cleanupRef.current);
-            cleanupRef.current = null;
-          }
-        }, 200);
       };
       if (typeof props.restoreSession === "function") {
         try {
@@ -271,18 +256,45 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
     }
 
     /** 版本翻页器 < X >：撤回/编辑重发产生的版本家族切换（官方 assistant-actions 操作区）。
-     * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 或键盘 ←/→
-     * 切换版本（优先通过影子仓储 /bubble/vault/list & /restore 原位切换，回退支持兄弟会话切换）。 */
+     * 仅在该次问询的**最后一条 assistant 消息**（当前版本的回答）显示；点击 ‹/› 切换版本
+     * （支持内联确认胶囊、历史版本状态提示与一键回到最新；已移除全局裸方向键监听以防误触）。 */
     function VersionPager(props) {
+      return renderWithChatGate(VersionPagerBody, props);
+    }
+
+    function VersionPagerBody(props) {
       var sessionId = (props && props.sessionId) || "";
       // —— hooks 无条件前置（React 规则：任何 return null 不得出现在 hooks 之前，否则 hook 数量漂移 → error #300）——
       var L = useUILocaleDict();
-      var cleanupRef = React.useRef(null);
       var vaultState = React.useState(null);
       var vaultManifest = vaultState[0];
       var setVaultManifest = vaultState[1];
       var vaultManifestRef = React.useRef(null);
+      var pagerOnState = React.useState(pagerEnabled());
+      var pagerOn = pagerOnState[0];
+      var setPagerOn = pagerOnState[1];
+      var pendingState = React.useState(null);
+      var pendingTargetIndex = pendingState[0];
+      var setPendingTargetIndex = pendingState[1];
       var snapshot = getChatSnapshot(props);
+
+      // 监听设置变更，实时同步 pagerEnabled 开关状态
+      React.useEffect(function () {
+        function syncPagerSetting() {
+          setPagerOn(pagerEnabled());
+        }
+        window.addEventListener("dsh-easyrewrite:settings-change", syncPagerSetting);
+        window.addEventListener("storage", syncPagerSetting);
+        return function () {
+          window.removeEventListener("dsh-easyrewrite:settings-change", syncPagerSetting);
+          window.removeEventListener("storage", syncPagerSetting);
+        };
+      }, []);
+
+      // 切换会话时重置待确认的目标版本索引
+      React.useEffect(function () {
+        setPendingTargetIndex(null);
+      }, [sessionId]);
 
       // 仅针对最后一个回合的助理回答/TurnTail 查询影子仓储版本清单
       var isLastTail = false;
@@ -313,7 +325,7 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
       } catch (e) { /* ignore */ }
 
       React.useEffect(function () {
-        if (!sessionId || !isLastTail || typeof fetch !== "function") return;
+        if (!pagerOn || !sessionId || !isLastTail || typeof fetch !== "function") return;
         var cancelled = false;
         var retryTimer = null;
         function fetchVaultList(attempt) {
@@ -340,33 +352,10 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
           cancelled = true;
           if (retryTimer !== null) clearTimeout(retryTimer);
         };
-      }, [sessionId, isLastTail, props && props.messageId]);
-
-      // 键盘 ←/→（输入框/可编辑区未聚焦时；实时读家族，避免陈旧闭包）
-      React.useEffect(function () {
-        function onKey(e) {
-          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-          var tgt = e.target;
-          if (tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable)) return;
-          var vMan = vaultManifestRef.current;
-          if (vMan && Array.isArray(vMan.versions) && vMan.versions.length >= 2) {
-            var vIdx = typeof vMan.currentVersionIndex === "number" ? vMan.currentVersionIndex : vMan.versions.length - 1;
-            if (e.key === "ArrowLeft" && vIdx > 0) { e.preventDefault(); goToVaultVersion(vMan, sessionId, vIdx - 1, props, setVaultManifest, vaultManifestRef); }
-            else if (e.key === "ArrowRight" && vIdx < vMan.versions.length - 1) { e.preventDefault(); goToVaultVersion(vMan, sessionId, vIdx + 1, props, setVaultManifest, vaultManifestRef); }
-            return;
-          }
-          var fam = familyOfSession(sessionId, props.ctxSessions);
-          if (!fam || fam.versions.length < 2) return;
-          var idx = fam.index;
-          if (e.key === "ArrowLeft" && idx > 0) { e.preventDefault(); goToVersion(fam, sessionId, idx - 1, props, cleanupRef); }
-          else if (e.key === "ArrowRight" && idx < fam.versions.length - 1) { e.preventDefault(); goToVersion(fam, sessionId, idx + 1, props, cleanupRef); }
-        }
-        window.addEventListener("keydown", onKey, true);
-        return function () { window.removeEventListener("keydown", onKey, true); };
-      }, [sessionId]);
+      }, [pagerOn, sessionId, isLastTail, props && props.messageId]);
 
       // —— 数据与显示条件（无 hooks，可安全 return null）——
-      if (!isLastTail) return null;
+      if (!pagerOn || !isLastTail) return null;
       var useVault = !!(vaultManifest && Array.isArray(vaultManifest.versions) && vaultManifest.versions.length >= 2);
       var family = useVault ? null : familyOfSession(sessionId, props.ctxSessions);
       if (!useVault && (!family || family.versions.length < 2)) return null;
@@ -377,13 +366,27 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
         : family.index;
       var atFirst = index <= 0;
       var atLast = index >= count - 1;
-      function go(delta) {
+      var isHistorical = index < count - 1;
+
+      function executeGo(targetIdx) {
+        if (targetIdx < 0 || targetIdx >= count || targetIdx === index) return;
+        setPendingTargetIndex(null);
         if (useVault) {
-          goToVaultVersion(vaultManifest, sessionId, index + delta, props, setVaultManifest, vaultManifestRef);
+          goToVaultVersion(vaultManifest, sessionId, targetIdx, props, setVaultManifest, vaultManifestRef);
         } else {
-          goToVersion(family, sessionId, index + delta, props, cleanupRef);
+          goToVersion(family, sessionId, targetIdx, props);
         }
       }
+
+      function requestGo(targetIdx) {
+        if (targetIdx < 0 || targetIdx >= count || targetIdx === index) return;
+        if (pagerConfirmEnabled()) {
+          setPendingTargetIndex(targetIdx);
+        } else {
+          executeGo(targetIdx);
+        }
+      }
+
       var pagerStyle = {
         display: "inline-flex",
         alignItems: "center",
@@ -405,6 +408,15 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
         fontFamily: "inherit"
       };
       function btnDisabled(flag) { return Object.assign({}, btnStyle, flag ? { opacity: 0.35, cursor: "default" } : {}); }
+
+      function formatVersionTag(idxPos) {
+        var verItem = useVault && vaultManifest && Array.isArray(vaultManifest.versions) ? vaultManifest.versions[idxPos] : null;
+        var num = verItem && typeof verItem.versionNumber === "number" ? verItem.versionNumber : (idxPos + 1);
+        var ts = verItem ? (verItem.updatedAt || verItem.createdAt) : null;
+        var shortTime = ts ? fmtShortVerTime(ts) : "";
+        return shortTime ? String(num) + " (" + shortTime + ")" : String(num);
+      }
+
       return React.createElement("span", { style: pagerStyle, "data-dsh-easyrewrite": "version-pager", title: L.pagerTitle },
         React.createElement("button", {
           type: "button",
@@ -412,7 +424,7 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
           style: btnDisabled(atFirst),
           disabled: atFirst,
           "aria-label": L.pagerPrev,
-          onClick: function () { go(-1); }
+          onClick: function () { requestGo(index - 1); }
         }, React.createElement(IconChevronLeftOutline, null)),
         React.createElement("span", { style: { padding: "0 4px", fontSize: "14px", whiteSpace: "nowrap" } }, (index + 1) + "/" + count),
         React.createElement("button", {
@@ -421,8 +433,89 @@ import { stageOutgoingFiles, stageBottomDraftFiles } from "../bubble/attachments
           style: btnDisabled(atLast),
           disabled: atLast,
           "aria-label": L.pagerNext,
-          onClick: function () { go(1); }
-        }, React.createElement(IconChevronRightOutline, null))
+          onClick: function () { requestGo(index + 1); }
+        }, React.createElement(IconChevronRightOutline, null)),
+        pendingTargetIndex !== null ? React.createElement("span", {
+          "data-dsh-easyrewrite": "pager-confirm-capsule",
+          style: {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            marginLeft: "6px",
+            padding: "2px 8px",
+            borderRadius: "999px",
+            background: "var(--dsw-alias-interactive-bg-hover, rgba(128,128,128,0.14))",
+            border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.28))",
+            fontSize: "12px",
+            color: "var(--dsw-alias-label-primary)",
+            whiteSpace: "nowrap"
+          }
+        },
+          React.createElement("span", null, (L.pagerSwitchAsk || "切至 v{ver}？").replace("{ver}", formatVersionTag(pendingTargetIndex))),
+          React.createElement("button", {
+            type: "button",
+            style: {
+              appearance: "none",
+              border: "none",
+              background: "var(--dsw-static-deepseek-500, #4d6bfe)",
+              color: "#ffffff",
+              borderRadius: "999px",
+              padding: "1px 8px",
+              fontSize: "11px",
+              cursor: "pointer",
+              fontFamily: "inherit"
+            },
+            onClick: function () { executeGo(pendingTargetIndex); }
+          }, L.confirm || "确定"),
+          React.createElement("button", {
+            type: "button",
+            style: {
+              appearance: "none",
+              border: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))",
+              background: "transparent",
+              color: "var(--dsw-alias-label-secondary)",
+              borderRadius: "999px",
+              padding: "1px 8px",
+              fontSize: "11px",
+              cursor: "pointer",
+              fontFamily: "inherit"
+            },
+            onClick: function () { setPendingTargetIndex(null); }
+          }, L.cancel || "取消")
+        ) : (isHistorical ? React.createElement("span", {
+          "data-dsh-easyrewrite": "pager-historical-badge",
+          style: {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+            marginLeft: "6px",
+            padding: "2px 8px",
+            borderRadius: "999px",
+            background: "rgba(217, 130, 43, 0.14)",
+            border: "1px solid rgba(217, 130, 43, 0.35)",
+            fontSize: "11px",
+            color: "#d9822b",
+            whiteSpace: "nowrap"
+          }
+        },
+          React.createElement("span", null, (L.pagerHistoricalBadge || "历史版本 v{cur}（最新 v{max}）").replace("{cur}", formatVersionTag(index)).replace("{max}", formatVersionTag(count - 1))),
+          React.createElement("button", {
+            type: "button",
+            style: {
+              appearance: "none",
+              border: "none",
+              background: "rgba(217, 130, 43, 0.22)",
+              color: "inherit",
+              borderRadius: "999px",
+              padding: "1px 7px",
+              fontSize: "11px",
+              fontWeight: "600",
+              cursor: "pointer",
+              fontFamily: "inherit"
+            },
+            onClick: function () { requestGo(count - 1); }
+          }, L.pagerBackToLatest || "回到最新")
+        ) : null)
       );
     }
 

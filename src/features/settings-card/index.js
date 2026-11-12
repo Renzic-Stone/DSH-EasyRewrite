@@ -18,7 +18,9 @@ import {
   draftConflictMode,
   showOriginalImages,
   messagePreviewSize,
-  vaultStorageLocation
+  vaultStorageLocation,
+  pagerEnabled,
+  pagerConfirmEnabled
 } from "../../core/constants.js";
 import { editWidthMode, editWidthCustom } from "../bubble/width.js";
 import {
@@ -215,6 +217,12 @@ import { legacyCopy } from "../../core/ui.js";
       var sVaultLoc = React.useState(vaultStorageLocation());
       var vaultLoc = sVaultLoc[0];
       var setVaultLoc = sVaultLoc[1];
+      var sPagerOn = React.useState(pagerEnabled());
+      var pagerOn = sPagerOn[0];
+      var setPagerOn = sPagerOn[1];
+      var sPagerConfirmOn = React.useState(pagerConfirmEnabled());
+      var pagerConfirmOn = sPagerConfirmOn[0];
+      var setPagerConfirmOn = sPagerConfirmOn[1];
       var sCleanState = React.useState({ cleaning: false, msg: "" });
       var cleanState = sCleanState[0];
       var setCleanState = sCleanState[1];
@@ -482,6 +490,8 @@ import { legacyCopy } from "../../core/ui.js";
           // —— 版本 ——
           React.createElement("div", { style: sectionStyle },
             React.createElement("span", { style: groupTitleStyle }, L.sectionVersions),
+            switchRow(L.pagerTitle, pagerOn, function (v) { setPagerOn(v); setBool("dsh-easyrewrite:pagerEnabled", v); }),
+            switchRow(L.pagerConfirm, pagerConfirmOn, function (v) { setPagerConfirmOn(v); setBool("dsh-easyrewrite:pagerConfirm", v); }),
             // 影子仓储路径选择（嵌套 fork）
             React.createElement("div", { style: groupStyle },
               React.createElement("span", { style: labelStyle }, L.vaultLocation),

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { IconCheckOutline, IconChevronLeftOutline, IconChevronRightOutline, ICONS } from "../../core/icons.js";
 import { useUILocaleDict } from "../../core/i18n.js";
+import { renderWithChatAndInputGate } from "../../core/hook-gates.js";
 import { log } from "../../core/log.js";
 import { serviceRefs, resolveImageCompat, resolveAttachmentFile, createDraftImagesCompat, addInputImagesCompat, getInputImageIdsCompat, pruneInputImagesCompat, getModelDirectories, isImageFileName, isImageMediaType, guessMimeType } from "../../core/services.js";
 import {
@@ -63,7 +64,7 @@ import { ConfirmCapsule } from "../recall/capsule.js";
 import { goToVersion, isFirstUserMessage, createBlankChildSession, resetConversation } from "../history/pager.js";
 import { countContentAfter, statOnlyUser } from "../other/helpers.js";
 
-    function UserBubbleView(props) {
+    function UserBubbleViewInner(props) {
       var node = props.node;
       var data = node && node.data ? node.data : {};
       var text = extractText(data.content);
@@ -90,7 +91,8 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
 
       // 渲染期读取输入框草稿（存 ref 供确认时使用）
       var draftRef = React.useRef("");
-      var inputState = typeof props.useInput === "function" ? props.useInput(function (s) { return s; }) : (props.inputState || null);
+      var editInFlightRef = React.useRef(false); // review M2：跨重渲染稳定的编辑重发并发锁，置顶于一切 early return 之前防 React #300
+      var inputState = (props && props._resolvedInputState !== undefined) ? props._resolvedInputState : (props.inputState || null);
       if (inputState) draftRef.current = typeof inputState.draft === "string" ? inputState.draft : "";
         // 镜像输入框当前图片 id（供撤回/编辑发送时精确搬运）
         try {
@@ -738,9 +740,10 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
       var anchorSeq = node && typeof node.anchorSeq === "number" ? node.anchorSeq : (node && typeof node.seq === "number" ? node.seq : 0);
       var afterCount = 0;
       var onlyUser = statOnlyUser();
+      var snapshot = getChatSnapshot(props);
       try {
         // 注意：useSession 必须传 selector（官方 bindSnapshotSelector 契约），无参调用会崩
-        var snapshot = getChatSnapshot(props);
+        // snapshot 已在 try 外读取（由外层 Hook Gate 预解析注入，避免 try/catch 内调 Hook）
         if (snapshot) {
           // 主路径：order（权威渲染顺序）+ 当前节点 key（v2.4.0：快照经 getChatSnapshot 归一化）
           if (Array.isArray(snapshot.order) && snapshot.nodes && typeof snapshot.nodes.get === "function") {
@@ -938,7 +941,7 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
         setEditing(false);
         log("info", "edit", "编辑取消（原样不变）");
       }
-      var editInFlightRef = React.useRef(false); // review M2：跨重渲染稳定的编辑重发并发锁
+      // editInFlightRef 已前置到组件顶部 Hook 区（防止 early return 后执行触发 React #300）
       async function confirmEdit() {
         if (editInFlightRef.current) return;
         editInFlightRef.current = true;
@@ -1711,5 +1714,9 @@ import { countContentAfter, statOnlyUser } from "../other/helpers.js";
     }
 
     /** 主题自适应样式：深色模式（body[data-ds-dark-theme]，rc.6 已确认标记）下图标反白。 */
+
+function UserBubbleView(props) {
+  return renderWithChatAndInputGate(UserBubbleViewInner, props);
+}
 
 export { UserBubbleView };

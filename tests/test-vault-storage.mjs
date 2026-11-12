@@ -498,6 +498,190 @@ try {
   else delete process.env.DSH_HOME;
 }
 
+// =========================================================================
+// [Test 8] Issue #28 专项回归验证（影子仓储数据零丢失 + 防原位覆盖 + 孤儿自愈 + 前端防误触）
+// =========================================================================
+console.log('[Test 8] Issue #28 专项回归验证（防回退后原位覆盖 v2 + 孤儿快照自愈 + 并发互斥锁 + 前端防误触）...');
+const mockIssue28Home = join(tmpdir(), 'dsh-issue28-test-' + Date.now());
+process.env.DSH_HOME = mockIssue28Home;
+
+try {
+  const { loadVaultManifest, decompressZstdFrames } = __test;
+  await writeVaultConfig({ storageMode: 'global' });
+
+  const sid28 = 'session-issue28-guard';
+  const sessDir28 = join(mockIssue28Home, 'sessions', 'ws-28', sid28);
+  await mkdir(sessDir28, { recursive: true });
+  const zstdPath28 = join(sessDir28, 'session.v4.jsonl.zstd');
+
+  // 8.1 构造 v1（早期 2 轮短对话）并保存快照
+  const v1Raw = [
+    JSON.stringify({ type: 'session', version: 4, id: sid28 }),
+    JSON.stringify({ type: 'turn/start', seq: 0 }),
+    JSON.stringify({ type: 'user/message', data: { text: '早期问题 v1' } }),
+    JSON.stringify({ type: 'assistant/message', data: { text: '早期回答 v1' } })
+  ].join('\n') + '\n';
+  await writeFile(zstdPath28, zstdCompressSync(Buffer.from(v1Raw, 'utf8')));
+  const s1 = await saveVaultSnapshotInternal(sid28, 'ws-28', '版本 1（早期 2 轮）', 'global', null, { immutable: true });
+  assert.ok(s1.ok, 'v1 快照保存应成功');
+  assert.equal(s1.manifest.versions.length, 1);
+
+  // 8.2 演进到 v2（模拟用户继续聊了 12 轮长对话，通过原位同步生成 v2）
+  const v2Lines = [
+    JSON.stringify({ type: 'session', version: 4, id: sid28 })
+  ];
+  for (let turn = 1; turn <= 12; turn++) {
+    v2Lines.push(JSON.stringify({ type: 'turn/start', seq: turn }));
+    v2Lines.push(JSON.stringify({ type: 'user/message', data: { text: `第 ${turn} 轮深度讨论问题` } }));
+    v2Lines.push(JSON.stringify({ type: 'assistant/message', data: { text: `第 ${turn} 轮长篇详细回答内容_${'A'.repeat(120)}` } }));
+  }
+  const v2Raw = v2Lines.join('\n') + '\n';
+  await writeFile(zstdPath28, zstdCompressSync(Buffer.from(v2Raw, 'utf8')));
+
+  // 模拟 /bubble/vault/list 中的最新活跃状态入库（replaceIfSameSource: true）
+  const s2 = await saveVaultSnapshotInternal(sid28, 'ws-28', '版本 2（12 轮完整对话）', 'global', null, { replaceIfSameSource: true });
+  assert.ok(s2.ok, 'v2 快照保存应成功');
+  assert.equal(s2.manifest.versions.length, 2, '此时应有 v1 和 v2 两个版本');
+  assert.equal(s2.manifest.currentVersionIndex, 1, '游标应指向 v2 (index 1)');
+
+  // 8.3 模拟用户触发回退到 v1（Issue #28 事故触发点）
+  const mockCtx28 = { get: () => null };
+  const restoreToV1 = await restoreVaultSnapshotInternal(mockCtx28, sid28, 'ws-28', 1, 'global');
+  assert.ok(restoreToV1.ok, '还原到 v1 应成功');
+  assert.equal(restoreToV1.manifest.currentVersionIndex, 0, '还原后游标应指向 v1 (index 0)');
+  assert.equal(restoreToV1.manifest.versions.length, 2, '版本总数仍为 2');
+  assert.equal(restoreToV1.manifest.versions[0].immutable, true, '还原后 v1 必须标记为 immutable');
+  assert.equal(restoreToV1.manifest.versions[1].immutable, true, '还原后 v2 必须强制锁定为 immutable，严禁后续被原位覆盖');
+
+  // 8.4 在处于 v1 时再次触发 /bubble/vault/list 原位同步：
+  //     由于全版本判重，v1 内容已在 versions[0] 中，必须直接判定为 unchanged，绝不新建重复版本或覆盖 v2
+  const dupCheck = await saveVaultSnapshotInternal(sid28, 'ws-28', '切回 v1 后的列表同步', 'global', null, { replaceIfSameSource: true });
+  assert.ok(dupCheck.ok && dupCheck.unchanged, '处于历史版本 v1 时未修改内容，应命中全版本列表判重');
+  assert.equal(dupCheck.manifest.versions.length, 2, '判重后版本数保持为 2');
+
+  // 8.5 核心防线测试：用户在回退后的 v1 基础上继续发消息（文件依然比 12 轮的 v2 小，但传入了 replaceIfSameSource: true）
+  //     旧版 Bug 会把新内容覆盖写进 v2.zstd 导致 12 轮对话永久丢失；新版必须新建 v3.zstd 且 100% 保护 v2.zstd！
+  const v3Raw = v1Raw + JSON.stringify({ type: 'user/message', data: { text: '在 v1 基础上分叉出的新问题 v3' } }) + '\n';
+  await writeFile(zstdPath28, zstdCompressSync(Buffer.from(v3Raw, 'utf8')));
+  const s3 = await saveVaultSnapshotInternal(sid28, 'ws-28', '从 v1 演进的新分支', 'global', null, { replaceIfSameSource: true });
+  assert.ok(s3.ok && s3.newSnapshot, '在 v1 基础上修改后保存应新建独立快照');
+  assert.equal(s3.manifest.versions.length, 3, '必须新建 v3，绝不能覆盖 v2（版本总数应为 3）');
+  assert.equal(s3.versionNumber, 3, '新建版本号必须为 3');
+
+  // 验证 v2.zstd 物理文件内容 100% 完好无损（包含第 12 轮深度讨论）
+  const vaultDir28 = resolveVaultDir(sid28, 'ws-28', 'global');
+  const v2SnapshotBuf = await readFile(join(vaultDir28, 'v2.zstd'));
+  const v2Decoded = decompressZstdFrames(v2SnapshotBuf);
+  assert.equal(v2Decoded, v2Raw, 'v2.zstd 物理快照内容必须与原 12 轮完整对话 100% 一致，零数据丢失！');
+
+  // 验证随时可以从 v2 恢复回全部 12 轮对话
+  const restoreBackToV2 = await restoreVaultSnapshotInternal(mockCtx28, sid28, 'ws-28', 2, 'global');
+  assert.ok(restoreBackToV2.ok, '重新切回 v2 应成功');
+  const currentDiskDecoded = decompressZstdFrames(await readFile(zstdPath28));
+  assert.equal(currentDiskDecoded, v2Raw, '切回 v2 后会话文件应完整恢复全部 12 轮对话');
+
+  // 8.6 验证 manifest.json 损坏或被清空时的物理孤儿快照自愈恢复
+  await writeFile(join(vaultDir28, 'manifest.json'), '{"versions": [BROKEN_JSON', 'utf8');
+  const healedManifest = await loadVaultManifest(vaultDir28, sid28);
+  assert.equal(healedManifest.versions.length, 3, 'manifest.json 损坏时必须自动从磁盘扫描恢复全部 3 个 .zstd 快照');
+  assert.deepEqual(
+    healedManifest.versions.map(v => v.versionNumber),
+    [1, 2, 3],
+    '自愈恢复的版本号序列必须完整为 [1, 2, 3]'
+  );
+
+  // 8.7 验证前端 pager.js 安全防护（移除全局方向键监听、接入开关与确认胶囊）
+  const pagerSrc = await readFile(join(process.cwd(), 'src', 'features', 'history', 'pager.js'), 'utf8');
+  assert.ok(!pagerSrc.includes('ArrowLeft') && !pagerSrc.includes('ArrowRight'), 'pager.js 必须彻底移除全局 ArrowLeft/ArrowRight 键盘监听');
+  assert.ok(pagerSrc.includes('pagerEnabled()'), 'pager.js 必须接入 pagerEnabled() 设置开关');
+  assert.ok(pagerSrc.includes('pagerConfirmEnabled()'), 'pager.js 必须接入 pagerConfirmEnabled() 确认胶囊开关');
+  assert.ok(pagerSrc.includes('pager-confirm-capsule'), 'pager.js 必须包含版本切换确认胶囊 UI');
+  assert.ok(pagerSrc.includes('pager-historical-badge'), 'pager.js 必须包含处于历史旧版本时的醒目提醒与回到最新按钮');
+
+  // 8.8 验证 Issue #28 @SimHapQ 场景（goToVersion 绝不删主会话 + 迁移阶段 B 保护侧栏活跃原生 Fork）
+  const goToVerStart = pagerSrc.indexOf('function goToVersion(');
+  const goToVerEnd = pagerSrc.indexOf('function isFirstUserMessage(');
+  assert.ok(goToVerStart >= 0 && goToVerEnd > goToVerStart);
+  const goToVerBody = pagerSrc.slice(goToVerStart, goToVerEnd);
+  assert.ok(!goToVerBody.includes('/bubble/vault/retire-session'), 'goToVersion 绝不能调用 retire-session 接口将主会话或兄弟会话从侧栏删除');
+
+  // 验证迁移阶段 B 不误删侧栏中均为活跃状态的原生 Fork 分支
+  const forkProtHome = join(mockIssue28Home, 'fork-prot');
+  process.env.DSH_HOME = forkProtHome;
+  await mkdir(join(forkProtHome, 'storages'), { recursive: true });
+  const fpSessA = join(forkProtHome, 'sessions', 'ws-fp', 'sess-fp-main');
+  const fpSessB = join(forkProtHome, 'sessions', 'ws-fp', 'sess-fp-branch');
+  await mkdir(fpSessA, { recursive: true });
+  await mkdir(fpSessB, { recursive: true });
+  await writeFile(join(fpSessA, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(JSON.stringify({ type: 'session', id: 'sess-fp-main' }) + '\n' + JSON.stringify({ type: 'user/message', data: { text: 'main' } }) + '\n')));
+  await writeFile(join(fpSessB, 'session.v4.jsonl.zstd'), zstdCompressSync(Buffer.from(JSON.stringify({ type: 'session', id: 'sess-fp-branch', parentSession: 'sess-fp-main' }) + '\n' + JSON.stringify({ type: 'user/message', data: { text: 'fork' } }) + '\n')));
+  await writeFile(join(forkProtHome, 'storages', 'workspace.json'), JSON.stringify({ global: { archivedSessionIds: [] }, tables: { workspaces: { 'ws-fp': { sessionIds: ['sess-fp-main', 'sess-fp-branch'] } } } }));
+  await migrateArchivedSessionsInternal(mockCtx28, true);
+  const wsAfterFp = JSON.parse(await readFile(join(forkProtHome, 'storages', 'workspace.json'), 'utf8'));
+  assert.deepEqual(wsAfterFp.tables.workspaces['ws-fp'].sessionIds, ['sess-fp-main', 'sess-fp-branch'], '迁移阶段 B 必须完整保留侧边栏中均处于活跃状态的原生 Fork 分支');
+
+  // 8.9 验证 /bubble/vault/list 真实路由并发请求下互斥锁不死锁且自动同步不覆写游标
+  process.env.DSH_HOME = mockIssue28Home;
+  const routesMap28 = new Map();
+  const regMockCtx = {
+    get: () => null,
+    webServer: {
+      register(r) {
+        routesMap28.set(r.path, r.handler);
+        return () => routesMap28.delete(r.path);
+      }
+    }
+  };
+  const { apply: hostApply } = await import('../lib/index.js');
+  const hostDispose28 = hostApply(regMockCtx);
+  const listHandler = routesMap28.get('/bubble/vault/list');
+  assert.equal(typeof listHandler, 'function', '应注册 /bubble/vault/list 路由');
+
+  const v4Raw = v2Raw + JSON.stringify({ type: 'user/message', data: { text: '并发新增内容 v3/v4' } }) + '\n';
+  await writeFile(zstdPath28, zstdCompressSync(Buffer.from(v4Raw, 'utf8')));
+
+  const { Readable } = await import('node:stream');
+  const callVaultList = (sid) => new Promise((resolve, reject) => {
+    const bodyBuf = Buffer.from(JSON.stringify({ sessionId: sid, workspaceId: 'ws-28', storageMode: 'global' }), 'utf8');
+    const req = Readable.from([bodyBuf]);
+    req.method = 'POST';
+    req.headers = {
+      host: '127.0.0.1:3000',
+      origin: 'http://127.0.0.1:3000',
+      'content-type': 'application/json',
+      'content-length': String(bodyBuf.length)
+    };
+    let status = 200;
+    const res = {
+      writeHead(code) { status = code; },
+      end(chunk) {
+        try { resolve({ status, body: JSON.parse(String(chunk || '{}')) }); }
+        catch (e) { reject(e); }
+      }
+    };
+    listHandler(req, res).catch(reject);
+  });
+
+  // 并发触发 /bubble/vault/list 与 saveVaultSnapshotInternal，验证互斥锁串行生效、无死锁、manifest 完整
+  const [listResA, listResB, concurrentSave] = await Promise.all([
+    callVaultList(sid28),
+    callVaultList(sid28),
+    saveVaultSnapshotInternal(sid28, 'ws-28', null, 'global', null, { replaceIfSameSource: true })
+  ]);
+  assert.equal(listResA.status, 200);
+  assert.equal(listResB.status, 200);
+  assert.ok(listResA.body.ok && listResB.body.ok && concurrentSave.ok, '并发 /bubble/vault/list 与 save 均应成功且不死锁');
+  const finalMan28 = await loadVaultManifest(vaultDir28, sid28, 'ws-28');
+  assert.ok(finalMan28.versions.length >= 4, `并发新增内容同步后应正确演进出 v4（实际 ${finalMan28.versions.length}）`);
+  hostDispose28();
+
+  console.log('✓ Issue #28 专项回归验证全部通过（零数据丢失 + 防覆盖 + 孤儿自愈 + 前端防误触 + 并发互斥锁）');
+} finally {
+  await rm(mockIssue28Home, { recursive: true, force: true }).catch(() => {});
+  if (oldHome) process.env.DSH_HOME = oldHome;
+  else delete process.env.DSH_HOME;
+}
+
 console.log('\n======================================');
 console.log('✔ 所有 EasyRewrite 影子仓储（Vault）与智能归档迁移专项测试全部通过！');
 console.log('======================================\n');

@@ -4,6 +4,25 @@
 
 
 
+## [3.1.0] — 2026-11-12 — 性能与底层架构优化 · 生命周期与核心稳定性 Bug 修复
+
+### ⚡ 性能与底层优化
+- **影子仓储并发与原子持久化加固**：引入按 `sessionId` 隔离的 `withVaultLock` 串行互斥锁与临时文件重命名原子写入（`writeVaultManifestAtomic`），覆盖 `/bubble/vault/save`、`/bubble/vault/restore` 与 `/bubble/vault/list` 同步链路；支持 `manifest.json` 损坏/截断时基于磁盘 `v*.zstd` 孤儿物理快照自动自愈恢复。
+- **零分支 Hook 门卫架构与非 Hook 同步读取**：新增 `hook-gates.js`（`renderWithChatGate` / `renderWithChatAndInputGate`）及非 Hook 同步读快照工具 `readChatSnapshotSync`，彻底消除渲染门控分支导致的组件 Hook 顺位漂移及回调内误调 Hook 隐患，减少冗余状态破坏。
+- **插件热加载生命周期收口**：将 Host `lib/index.js`、`lib/row.js` 与 Client `src/index.js` 的 `apply` 统一为箭头函数并纳入 `ctx.effect` 作用域，补全 `disposers` 逆序卸载、幂等去重与注册途中失败自动回滚。
+
+### 🐛 Bug 修复
+- **修复 React Error #300 / #310 / #321 渲染崩溃导致操作栏不显示（Issue #27）**：置顶 `UserBubbleViewInner` 的 `editInFlightRef` 并隔离 `pendingMine` 早退，拆分 `HistorySettingsPage` 的 `summary` 视图分支，移除 `getChatSnapshot` 与 `RecallBanner` 内的条件/`try` 内 Hook 调用，并通过 `acorn` AST 静态扫描与严格 Hook 计数压测。
+- **修复版本翻页器回退覆盖丢数据与误触，保护原生 Fork / 第三方侧聊（Issue #28）**：
+  - 增加回退后全历史快照 `immutable` 不可变封存、原位同步五重安全门禁及跨版本全量判重，杜绝切换历史版本后再发消息覆盖丢失高轮次完整对话；
+  - 移除极易误触的全局 `ArrowLeft` / `ArrowRight` 键盘翻页监听，接通 `pagerEnabled` 开关实时响应，新增版本切换确认胶囊（`pagerConfirm` 三语支持）与历史状态持续徽章（含时间戳与一键回到最新）；
+  - 排除 `dsh-sidenote` 侧边会话与 `archived` 会话，移除 `goToVersion` 中误删主会话的 `/bubble/vault/retire-session` 调用，并在归档迁移阶段 B 严格保护侧边栏均处于活跃状态的原生 Fork 分支。
+- **修复同进程二次激活报 `duplicate exact route "/bubble/log"`（Issue #29）**：避免 Cordis `isConstructor(apply)` 误判丢弃清理句柄，确保热卸载/热更新时 18 条服务端路由、`ctx.settings` 与 `session/created` 监听 100% 释放无残留。
+
+### 致谢（Special Thanks）
+- ❤️ 特别鸣谢 **@Sftxo-1**（Issue #27）、**@Mewwwwwwwwwwww** & **@SimHapQ**（Issue #28）、**@DBSoH**（Issue #29）对异常复现、现场线索与兼容细节的及时反馈！
+
+
 ## [3.0.1] — 2026-11-07 — 启动期高吞吐加固 · 内存防暴涨与全链路切片解压 · 输入框光标拖拽隔离
 
 ### 🐛 缺陷修复 & 架构加固

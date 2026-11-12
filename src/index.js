@@ -11,7 +11,8 @@ import { registerHistory } from "./features/history/index.js";
 import { registerOther } from "./features/other/index.js";
 import { EasyRewriteSettingsCard } from "./features/settings-card/index.js";
 
-function apply(ctx) {
+// 使用箭头函数（无 .prototype），防止 Cordis isConstructor 误判并确保随 ctx.effect 干净卸载
+const apply = (ctx) => {
   ctx.effect(() => {
     const disposers = [];
 

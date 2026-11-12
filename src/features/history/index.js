@@ -10,6 +10,14 @@ import { invokeOpenSession } from "../../core/session.js";
 
 export function HistorySettingsPage(props) {
   const L = useUILocaleDict();
+  if (props && props.view === "summary") {
+    return L.rowHistoryDesc || "提供会话顶部 < X / Y > 历史版本翻页器与历史版本树导航。";
+  }
+  return React.createElement(HistorySettingsPageBody, props);
+}
+
+function HistorySettingsPageBody(props) {
+  const L = useUILocaleDict();
   const styles = createSettingsStyles();
   const {
     bodyStyle,
@@ -22,16 +30,13 @@ export function HistorySettingsPage(props) {
   } = styles;
 
   const [pagerOn, setPagerOn] = React.useState(getBool("dsh-easyrewrite:pagerEnabled", true));
+  const [pagerConfirmOn, setPagerConfirmOn] = React.useState(getBool("dsh-easyrewrite:pagerConfirm", true));
   const [histOpen, setHistOpen] = React.useState(true); // 有版本时默认展开，便于直观查阅
   const [famOpenMap, setFamOpenMap] = React.useState({});
   const [statusMsg, setStatusMsg] = React.useState(null);
   const [cleaning, setCleaning] = React.useState(false);
 
   const ctxSessions = (props && props.ctxSessions) || serviceRefs.sessions;
-
-  if (props && props.view === "summary") {
-    return L.rowHistoryDesc || "提供会话顶部 < X / Y > 历史版本翻页器与历史版本树导航。";
-  }
 
   // 融合拉取影子仓储与官方 lineage 全量版本家族
   const { families, loading, refresh } = useVersionFamilies(ctxSessions, props);
@@ -79,6 +84,10 @@ export function HistorySettingsPage(props) {
       switchRow(L.pagerTitle || "启用翻页器", pagerOn, (v) => {
         setPagerOn(v);
         setBool("dsh-easyrewrite:pagerEnabled", v);
+      }),
+      switchRow(L.pagerConfirm || "版本切换确认胶囊", pagerConfirmOn, (v) => {
+        setPagerConfirmOn(v);
+        setBool("dsh-easyrewrite:pagerConfirm", v);
       }),
       statusMsg ? React.createElement("div", {
         style: { padding: "6px 10px", borderRadius: "6px", background: "rgba(77,107,254,0.12)", color: "var(--dsw-alias-brand-primary, #4d6bfe)", fontSize: "12px", marginBottom: "6px" }

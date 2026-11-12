@@ -1,7 +1,8 @@
 import * as React from "react";
 import { log } from "../../core/log.js";
 import { useUILocaleDict } from "../../core/i18n.js";
-import { recallVisualMode, draftConflictMode, hasChatSnapshot, getChatSnapshot } from "../../core/constants.js";
+import { recallVisualMode, draftConflictMode, hasChatSnapshot, getChatSnapshot, readChatSnapshotSync } from "../../core/constants.js";
+import { renderWithChatGate } from "../../core/hook-gates.js";
 import { formatClock } from "../../core/ui.js";
 import { usePending, readPending, writePending } from "./store.js";
 import { barApplyTune, barApplyCircTune, barTune } from "./tune.js";
@@ -32,7 +33,9 @@ import {
   createDraftImagesCompat
 } from "../../core/services.js";
 
-    function RecallBanner(props) {
+    function RecallBannerInner(props) {
+      var latestChatSnapRef = React.useRef(null);
+      latestChatSnapRef.current = getChatSnapshot(props);
       var sessionId = props.sessionId;
       var L = useUILocaleDict();
       var pending = usePending(sessionId);
@@ -345,8 +348,8 @@ import {
       // 窗口内无但 hasMore=true → 快照窗口外，{code:"host-fallback"} 走保留的 host 路由。
       function computeRecallBoundary(props, targetSeq) {
         try {
-          if (!hasChatSnapshot(props)) return null; // 无法本地判定 → host fallback
-          var snapshot = getChatSnapshot(props);
+          var snapshot = readChatSnapshotSync(props && props.sessionId, { uiConversation: props && props.uiConversation, sessions: props && props.ctxSessions, fallbackSnapshot: latestChatSnapRef.current || (props && (props._resolvedChatSnapshot || props.chatSnapshot)) || null });
+          if (!snapshot) return null; // 无法本地判定 → host fallback
           if (!snapshot || !Array.isArray(snapshot.order) || !snapshot.nodes || typeof snapshot.nodes.get !== "function") return null;
           var order = snapshot.order;
           var tIdx = -1;
@@ -855,5 +858,9 @@ import {
 
       return null; // 纯 DOM 注入，槽位不渲染内容
     }
+
+function RecallBanner(props) {
+  return renderWithChatGate(RecallBannerInner, props);
+}
 
 export { RecallBanner };

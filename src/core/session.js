@@ -3,6 +3,25 @@ import { log } from "./log.js";
 import { serviceRefs } from "./services.js";
 
 // ---------- 版本家族（< X > 翻页器）：派生自官方 parentId lineage ----------
+/** 读取第三方侧边对话插件（如 dsh-sidenote）登记的隐藏侧边会话 ID，防止将侧聊误判为版本分叉 */
+function getExternalSideSessionIds() {
+  const out = new Set();
+  try {
+    if (typeof localStorage !== "undefined" && localStorage && typeof localStorage.getItem === "function") {
+      const raw = localStorage.getItem("dsh-sidenote:side-sessions:v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.ids)) {
+          for (let i = 0; i < parsed.ids.length; i++) {
+            if (typeof parsed.ids[i] === "string" && parsed.ids[i]) out.add(parsed.ids[i]);
+          }
+        }
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return out;
+}
+
 export function sessionLineageRoot(byId, id) {
   let cur = id;
   let guard = 0;
@@ -18,6 +37,8 @@ export function sessionLineageRoot(byId, id) {
 /** 派生版本家族：{rootId, versions[](深度升序=fork 时间序，updatedAt 次序), index}；子代理排除。 */
 export function familyOfSession(sessionId, ctxSessions) {
   try {
+    const externalHidden = getExternalSideSessionIds();
+    if (externalHidden.has(sessionId)) return null;
     if (!ctxSessions || !ctxSessions.list || typeof ctxSessions.list.getSnapshot !== "function") return null;
     const snap = ctxSessions.list.getSnapshot();
     if (!snap || !snap.byId || !snap.byId[sessionId]) return null;
@@ -47,6 +68,8 @@ export function familyOfSession(sessionId, ctxSessions) {
       const id = ids[j];
       const sj = snap.byId[id];
       if (sj && sj.origin === "subagent") continue;
+      if (sj && sj.archived) continue;
+      if (externalHidden.has(id)) continue;
       if (sj && sj.blank) continue;
       if (depth[id] === void 0) continue;
       let cur = id;
@@ -90,10 +113,13 @@ export function listVersionFamilies(ctxSessions) {
     if (!ctxSessions || !ctxSessions.list) return [];
     const snap = ctxSessions.list.getSnapshot();
     if (!snap || !snap.byId) return [];
+    const externalHidden = getExternalSideSessionIds();
     const seen = {};
     const out = [];
     const ids = Array.isArray(snap.ids) ? snap.ids : [];
     for (let i = 0; i < ids.length; i++) {
+      const curMeta = snap.byId[ids[i]];
+      if (externalHidden.has(ids[i]) || (curMeta && (curMeta.archived || curMeta.origin === "subagent"))) continue;
       const root = sessionLineageRoot(snap.byId, ids[i]);
       if (seen[root]) continue;
       seen[root] = true;
